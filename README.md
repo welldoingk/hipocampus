@@ -37,16 +37,44 @@ npx engram init --domains web,backend,infra
 npx engram init --no-vector
 ```
 
-## Why Engram
+## The Problem
 
-| | Ad-hoc MEMORY.md | OpenViking | **Engram** |
+AI agents forget everything between sessions. The standard solutions each solve part of the problem, but none solve it completely:
+
+### MEMORY.md alone is not enough
+
+Claude Code's auto-memory and OpenClaw's MEMORY.md are injected into every API call — the agent "remembers" whatever is written there. But system prompt space is finite. A 50-line MEMORY.md works for the first week. After a month of daily use, you have hundreds of decisions, lessons, and context that simply cannot fit. You're forced to choose what to keep and what to lose.
+
+Worse, the agent doesn't know what it has forgotten. It can't search what isn't there.
+
+### RAG and vector search are not enough
+
+RAG (qmd, embeddings, vector search) solves the storage problem — you can index thousands of files and search them. But search requires **knowing what to search for**. When a user asks "what was that paper about compaction trees?", the agent can search for it. But when the user asks "how should we handle session timeouts?" — the agent doesn't know whether it has relevant past context or not. It might have discussed this exact problem three weeks ago, but without awareness that the knowledge exists, it defaults to external search or guessing.
+
+The fundamental gap: **you can't search for something you don't know you know.**
+
+### The missing piece: awareness without loading
+
+The real problem is the cost of awareness. Loading all past context into every API call would give the agent perfect memory, but at 100K+ tokens per month, this is prohibitively expensive. Not loading it means the agent is unaware of its own knowledge.
+
+Engram solves this with a **3-tier architecture** and a **compaction tree with a root index**:
+
+- **Layer 1 (Hot):** ~500 lines always loaded — includes ROOT.md, a ~100-line topic index that tells the agent "what I know I know" at ~3K tokens per call
+- **Layer 2 (Warm):** detailed records read on demand — daily logs, knowledge files, plans
+- **Layer 3 (Cold):** searchable via qmd — the compaction tree (daily → weekly → monthly summaries) provides hierarchical drill-down when search misses
+
+ROOT.md is the key innovation. It's a functional index with four sections: Active Context (what's happening now), Recent Patterns (cross-cutting insights), Historical Summary (compressed timeline), and Topics Index (O(1) keyword lookup). The agent checks the Topics Index to decide in one glance: search memory, search externally, or answer from general knowledge. No loading required.
+
+### How engram compares
+
+| | MEMORY.md only | RAG only | **Engram** |
 |---|---|---|---|
-| Setup | Manual | Python server + embedding model + config | `npx engram init` |
-| Infrastructure | None | Server + DB | **None** |
-| Search | None | Vector + directory recursive | **BM25 + vector hybrid (via qmd)** |
-| Memory structure | Unstructured | Filesystem paradigm | **3-tier (hot/warm/cold)** |
-| Agent integration | DIY | Plugin API | **Drop-in skills** |
-| Cost optimization | None | L0/L1/L2 tiered loading | **Prompt cache friendly** |
+| Remembers past sessions | Until it overflows | If you search for it | **Always — tiered storage** |
+| Knows what it knows | Only what fits in ~50 lines | Only if you ask the right query | **ROOT.md topic index (~3K tokens)** |
+| Cost per API call | Low (small context) | Low (no injection) | **Low (~3K extra tokens for ROOT.md)** |
+| Setup | None | Server + embeddings + config | **`npx engram init`** |
+| Infrastructure | None | Vector DB or embedding service | **None — just files** |
+| Scales over months | No — overflows | Yes — but blind to own knowledge | **Yes — compaction tree self-compresses** |
 
 ## Architecture
 
