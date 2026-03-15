@@ -1,0 +1,36 @@
+{
+  "name": "engram",
+  "version": "0.1.0",
+  "description": "Drop-in memory harness for AI agents — 3-tier memory, compaction tree, hybrid search via qmd",
+  "type": "module",
+  "bin": {
+    "engram": "./cli/init.mjs"
+  },
+  "keywords": [
+    "ai-agent",
+    "memory",
+    "openclaw",
+    "claude-code",
+    "rag",
+    "qmd",
+    "llm",
+    "context-management"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clawy-ai/engram"
+  },
+  "files": [
+    "cli/",
+    "spec/",
+    "templates/",
+    "skills/",
+    "engram.config.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

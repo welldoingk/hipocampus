@@ -1,0 +1,12 @@
+{
+  "domains": {
+    "default": {
+      "scratchpad": "SCRATCHPAD.md",
+      "working": "WORKING.md"
+    }
+  },
+  "search": {
+    "vector": true,
+    "embedModel": "auto"
+  }
+}
