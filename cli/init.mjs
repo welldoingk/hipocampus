@@ -202,6 +202,7 @@ This project uses engram 3-tier memory. Follow \`.claude/skills/engram-core/SKIL
 6. TASK-QUEUE.md — mark completed, add follow-ups
 
 ### Rules
+- **Never skip checkpoints** — every task completion MUST trigger the 6-step checkpoint
 - MEMORY.md Core section: never modify or delete
 - memory/*.md (raw): permanent, never delete
 - Search: see \`.claude/skills/engram-search/SKILL.md\`
@@ -243,6 +244,20 @@ if (isOpenClaw) {
     if (!agentsContent.includes("ROOT.md")) {
       appendFileSync(agentsMd, "\nRead `memory/ROOT.md` at every session start.\n");
       console.log("  + added ROOT.md instruction to AGENTS.md (no openclaw.json)");
+    }
+  }
+  // Add compaction rotation to HEARTBEAT.md if it exists
+  const heartbeatMd = join(CWD, "HEARTBEAT.md");
+  if (existsSync(heartbeatMd)) {
+    const hbContent = readFileSync(heartbeatMd, "utf8");
+    if (!hbContent.includes("engram-compaction")) {
+      const compactionRotation = `
+### Memory Maintenance (every 24h)
+Run \`engram-compaction\` skill: build/update compaction tree (daily/weekly/monthly/root nodes).
+On the first heartbeat of each new day, process all pending compaction for the previous day(s).
+`;
+      appendFileSync(heartbeatMd, compactionRotation);
+      console.log("  + added compaction rotation to HEARTBEAT.md");
     }
   }
 } else {
