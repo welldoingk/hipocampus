@@ -111,28 +111,32 @@ Full memory topic index — the root node of the 5-level compaction tree. Auto-l
 type: root
 status: tentative
 last-updated: YYYY-MM-DD
-months-covered: [YYYY-MM, YYYY-MM, YYYY-MM]
 ---
 
-## YYYY-MM (recent — detailed)
-- topic-keyword: key decisions, references, file pointers
-- topic-keyword: key decisions, references, file pointers
+## Active Context (recent ~7 days)
+- topic: current state, what's happening now
 
-## YYYY-MM (compressed)
-- topic-keyword: keywords
-- topic-keyword: keywords
+## Recent Patterns
+- pattern: cross-cutting insight that emerged recently
 
-## YYYY-MM (highly compressed)
-- topic-keyword: keywords
+## Historical Summary
+- YYYY-MM~MM: high-level summary of that period
+- YYYY-MM: key events
+
+## Topics Index
+- topic-keyword: sub-keywords, references → knowledge/file.md
+- topic-keyword: sub-keywords
 ```
 
 **Format rules:**
-- YAML frontmatter: `type: root`, `status: tentative` (always — root never becomes fixed), `last-updated: YYYY-MM-DD`, `months-covered: [list]`
-- Recent months: detailed entries with key decisions and file references
-- Older months: progressively compressed — fewer keywords, no detail
+- YAML frontmatter: `type: root`, `status: tentative` (always — root never becomes fixed), `last-updated: YYYY-MM-DD`
+- Active Context: current week's highlights — what's in progress, immediate priorities
+- Recent Patterns: cross-cutting insights not tied to a specific time period
+- Historical Summary: high-level chronology — compress older periods, keep recent brief summaries
+- Topics Index: keyword-dense lookup table — enables O(1) "do I know about X?" judgment
 - No prose — keyword-dense only
 - Target: ~100 lines (~3K tokens, configurable via `compaction.rootMaxTokens`)
-- When over size cap: self-compress — shrink oldest months first, keep recent months detailed
+- When over size cap: self-compress — compress Historical Summary first, keep Active Context and Topics Index intact
 
 **Example:**
 
@@ -141,20 +145,25 @@ months-covered: [YYYY-MM, YYYY-MM, YYYY-MM]
 type: root
 status: tentative
 last-updated: 2026-03-15
-months-covered: [2026-01, 2026-02, 2026-03]
 ---
 
-## 2026-03 (recent — detailed)
-- engram open-source: 3-tier memory harness, compaction tree design, qmd integration
-- legal research: Civil Act §750 tort liability, 2 precedents summarized → knowledge/legal-750.md
-- Claude Code plugin: registration process research, API spec review
+## Active Context (recent ~7 days)
+- engram open-source: finalizing spec, ROOT.md format refactor in progress
+- legal research: Civil Act §750 tort liability brief, 2 precedents → knowledge/legal-750.md
 
-## 2026-02 (compressed)
-- clawy.pro launch: K8s infra, provisioning pipeline, 80-bot stabilization
-- qmd adoption: BM25 + vector hybrid, embeddinggemma-300M selection rationale
+## Recent Patterns
+- compaction design: functional sections outperform chronological for O(1) topic lookup
+- knowledge files: always cross-reference from Topics Index for discoverability
 
-## 2026-01 (highly compressed)
-- initial design: 3-tier memory architecture, checkpoint protocol established
+## Historical Summary
+- 2026-01~02: initial 3-tier design, checkpoint protocol, clawy.pro K8s launch
+- 2026-03: engram open-source, qmd integration, BM25+vector hybrid search
+
+## Topics Index
+- engram: compaction tree, ROOT.md, file-formats, skills → spec/
+- legal: Civil Act §750, tort liability, precedents → knowledge/legal-750.md
+- clawy.pro: K8s infra, provisioning, 80-bot deployment
+- qmd: BM25, vector hybrid, embeddinggemma-300M
 ```
 
 ## Layer 3 Files — Compaction Nodes

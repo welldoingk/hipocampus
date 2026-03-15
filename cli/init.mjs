@@ -93,10 +93,19 @@ if (!existsSync(rootMdPath)) {
 type: root
 status: tentative
 last-updated: ${today}
-months-covered: []
 ---
 
-(No memory entries yet. This file will be populated automatically as conversations occur.)
+## Active Context (recent ~7 days)
+<!-- Current work and priorities -->
+
+## Recent Patterns
+<!-- Cross-cutting insights -->
+
+## Historical Summary
+<!-- High-level timeline -->
+
+## Topics Index
+<!-- topic: keywords, references -->
 `);
   console.log("  + memory/ROOT.md");
 }

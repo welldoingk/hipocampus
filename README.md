@@ -98,7 +98,7 @@ Smart thresholds prevent information loss: below threshold, source files are cop
 
 ### ROOT.md — "What I Know I Know"
 
-Without a root index, the agent cannot answer "do I already know about this?" without loading memory — which costs tokens. ROOT.md solves this: a ~100-line keyword-dense topic index loaded automatically at every session start. The agent uses it to decide in one glance whether to search internal memory, search externally, or answer from general knowledge.
+Without a root index, the agent cannot answer "do I already know about this?" without loading memory — which costs tokens. ROOT.md solves this: a ~100-line functional index loaded automatically at every session start. It has four sections — Active Context (current work), Recent Patterns (cross-cutting insights), Historical Summary (chronology), and Topics Index (O(1) keyword lookup). The agent uses the Topics Index to decide in one glance whether to search internal memory, search externally, or answer from general knowledge.
 
 ## File Layout After Init
 

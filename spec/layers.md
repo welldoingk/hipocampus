@@ -39,9 +39,9 @@ Search (qmd) only works when you know what to search for. Without a root node:
 | File | `memory/ROOT.md` |
 | Layer | Layer 1 (auto-loaded at every session start by platform) |
 | Size cap | ~100 lines (~3K tokens), configurable via `compaction.rootMaxTokens` |
-| Format | Keyword-dense topic index, no prose |
+| Format | Functional sections: Active Context, Recent Patterns, Historical Summary, Topics Index |
 | Update | Every compaction cycle (whenever tentative nodes change) |
-| Time bias | Recent months detailed, older months compressed |
+| Structure | Active Context (current week) + Topics Index (O(1) lookup) + Historical Summary (chronology) |
 
 ROOT.md is the top node of the 5-level compaction tree (see Layer 3). The platform injects it automatically — Claude Code via `@memory/ROOT.md` import in CLAUDE.md, OpenClaw via `bootstrapFiles` in openclaw.json.
 
@@ -49,8 +49,8 @@ ROOT.md is the top node of the 5-level compaction tree (see Layer 3). The platfo
 
 | | MEMORY.md | ROOT.md |
 |---|---|---|
-| Content | Specific facts, rules, lessons | Topic-level index |
-| Example | "DB uses Supabase" | "DB migration work done in Feb" |
+| Content | Specific facts, rules, lessons | Functional index: Active Context, Patterns, History, Topics |
+| Example | "DB uses Supabase" | "db-migration: Supabase, schema changes → knowledge/db.md" |
 | Purpose | Immediately applicable knowledge (what I know) | "Do I know about this?" judgment (what I know I know) |
 | Size | Core ~50 lines + Adaptive ~50 lines | ~100 lines (~3K tokens) |
 

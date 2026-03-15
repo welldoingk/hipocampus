@@ -145,20 +145,51 @@ root = compaction(monthly_tentative)
 root = recompact(existing_root, changed_monthly_node)
 
 # Root exceeds size cap → self-compress
-# Older topic sections shrink first, recent months stay detailed
+# Compress Historical Summary first; keep Active Context and Topics Index intact
 ```
 
 Steps:
 1. Read all existing monthly nodes (`memory/monthly/YYYY-MM.md`), sorted by date
 2. Read existing `memory/ROOT.md` (if it exists)
-3. Recompact root: incorporate new/changed monthly data, compress older months as needed
+3. Recompact root by updating each functional section:
+   - **Active Context**: replace with current week's highlights — what's in progress, immediate priorities
+   - **Recent Patterns**: update with newly emerged cross-cutting insights
+   - **Historical Summary**: append/compress older context — keep brief summaries of past periods
+   - **Topics Index**: merge new topics, update existing entries with new sub-keywords and references
 4. Ensure total size stays within `compaction.rootMaxTokens` (default 3000 tokens / ~100 lines)
-   - Recent months: detailed entries with decisions and file references
-   - Older months: progressively compressed — fewer keywords, shorter entries
-   - When over cap: compress oldest month sections first
+   - When over cap: compress Historical Summary entries first (merge periods, remove detail)
+   - Active Context and Topics Index are the highest-value sections — preserve them
 5. Set `status: tentative` (root is always tentative — it never becomes fixed)
-6. Update `last-updated: YYYY-MM-DD` and `months-covered: [list]` in frontmatter
+6. Update `last-updated: YYYY-MM-DD` in frontmatter
 7. Write to `memory/ROOT.md`
+
+**Example ROOT.md after Step 5:**
+
+```markdown
+---
+type: root
+status: tentative
+last-updated: 2026-03-15
+---
+
+## Active Context (recent ~7 days)
+- engram open-source: finalizing spec, ROOT.md format refactor in progress
+- legal research: Civil Act §750 tort liability brief, 2 precedents → knowledge/legal-750.md
+
+## Recent Patterns
+- compaction design: functional sections outperform chronological for O(1) topic lookup
+- knowledge files: always cross-reference from Topics Index for discoverability
+
+## Historical Summary
+- 2026-01~02: initial 3-tier design, checkpoint protocol, clawy.pro K8s launch
+- 2026-03: engram open-source, qmd integration, BM25+vector hybrid search
+
+## Topics Index
+- engram: compaction tree, ROOT.md, file-formats, skills → spec/
+- legal: Civil Act §750, tort liability, precedents → knowledge/legal-750.md
+- clawy.pro: K8s infra, provisioning, 80-bot deployment
+- qmd: BM25, vector hybrid, embeddinggemma-300M
+```
 
 ## Smart Threshold Table
 

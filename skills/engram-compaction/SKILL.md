@@ -127,25 +127,33 @@ When any monthly node is created or updated:
 1. Read existing `memory/ROOT.md` (if exists)
 2. Read the new/updated monthly node
 3. Recursive compaction: `root = recompact(existing_root + monthly_changes)`
+   - **Active Context**: replace with current week's highlights — what's in progress, immediate priorities
+   - **Recent Patterns**: update with newly emerged cross-cutting insights
+   - **Historical Summary**: append/compress older context — merge periods, keep brief summaries
+   - **Topics Index**: merge new topics, update existing entries with new sub-keywords and references
 4. Write to `memory/ROOT.md`
-5. If root exceeds size cap (`compaction.rootMaxTokens` in config, default 3000 tokens / ~100 lines): self-compress — shrink older month sections first, keep recent months detailed
+5. If root exceeds size cap (`compaction.rootMaxTokens` in config, default 3000 tokens / ~100 lines): self-compress — compress Historical Summary first, keep Active Context and Topics Index intact
 
 ```markdown
 ---
 type: root
 status: tentative
 last-updated: YYYY-MM-DD
-months-covered: [2026-01, 2026-02, 2026-03]
 ---
 
-## 2026-03 (recent — detailed)
-- topic: keywords, key decisions, references
+## Active Context (recent ~7 days)
+- topic: current state, what's happening now
 
-## 2026-02 (compressed)
-- topic: keywords
+## Recent Patterns
+- pattern: cross-cutting insight that emerged recently
 
-## 2026-01 (highly compressed)
-- topic: keywords
+## Historical Summary
+- YYYY-MM~MM: high-level summary of that period
+- YYYY-MM: key events
+
+## Topics Index
+- topic-keyword: sub-keywords, references → knowledge/file.md
+- topic-keyword: sub-keywords
 ```
 
 ### Step 6: Re-index

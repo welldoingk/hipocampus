@@ -24,13 +24,20 @@ Check `engram.config.json`:
 
 ## ROOT.md — "Do I Know About This?"
 
-`memory/ROOT.md` is a topic-level index of everything in memory, auto-loaded every session. **Before any lookup, check ROOT.md first:**
+`memory/ROOT.md` is a functional index of everything in memory, auto-loaded every session. It has four sections:
 
-- Topic found in ROOT.md → search memory (qmd or tree traversal)
-- Topic NOT in ROOT.md → use external search or answer from general knowledge
+- **Active Context** — current week's work and priorities (immediate situational awareness)
+- **Recent Patterns** — cross-cutting insights not tied to a specific time period
+- **Historical Summary** — high-level chronology of past periods
+- **Topics Index** — keyword lookup table for O(1) "do I know about X?" judgment
+
+**Before any lookup, check ROOT.md first:**
+
+- Topic found in Topics Index → search memory (qmd or tree traversal)
+- Topic NOT in Topics Index → use external search or answer from general knowledge
 - This eliminates "loading to decide whether to load" — ROOT.md is always in context
 
-**This is the core value of the compaction tree.** Search only works when you know what to search for. ROOT.md tells you what you know.
+**This is the core value of the compaction tree.** Search only works when you know what to search for. The Topics Index tells you what you know at a glance.
 
 ## BM25 Query Construction
 
@@ -53,11 +60,12 @@ When using `qmd search` (BM25 mode), queries must be **keywords**, not natural l
 When qmd search returns insufficient results, traverse the compaction tree:
 
 ```
-1. ROOT.md → identify relevant month and topic
-2. memory/monthly/YYYY-MM.md → identify relevant week
-3. memory/weekly/YYYY-WNN.md → identify relevant day
-4. memory/daily/YYYY-MM-DD.md → detailed view
-5. memory/YYYY-MM-DD.md → full raw original
+1. ROOT.md Topics Index → confirm topic exists, note any file references
+2. ROOT.md Historical Summary → identify relevant time period
+3. memory/monthly/YYYY-MM.md → identify relevant week
+4. memory/weekly/YYYY-WNN.md → identify relevant day
+5. memory/daily/YYYY-MM-DD.md → detailed view
+6. memory/YYYY-MM-DD.md → full raw original
 ```
 
 Always try qmd search first. Tree traversal is the fallback.
