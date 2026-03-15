@@ -20,12 +20,20 @@ if (!command || command === "--help" || command === "-h") {
     engram init                          Initialize memory system in current directory
     engram init --domains web,backend    Initialize with domain partitioning
     engram init --no-vector              Disable vector search (BM25 only)
+    engram compact                       Run mechanical compaction (called automatically by hooks)
 
   Options:
     --domains <list>   Comma-separated domain names for SCRATCHPAD/WORKING partitioning
     --no-vector        Disable vector search (saves ~2GB disk, no embedding models)
     --help, -h         Show this help
 `);
+  process.exit(0);
+}
+
+if (command === "compact") {
+  // Delegate to compact.mjs
+  const compactPath = join(__dirname, "compact.mjs");
+  await import(compactPath);
   process.exit(0);
 }
 
@@ -272,20 +280,6 @@ if (isOpenClaw) {
       console.log("  + added ROOT.md instruction to AGENTS.md (no openclaw.json)");
     }
   }
-  // Add compaction rotation to HEARTBEAT.md if it exists
-  const heartbeatMd = join(CWD, "HEARTBEAT.md");
-  if (existsSync(heartbeatMd)) {
-    const hbContent = readFileSync(heartbeatMd, "utf8");
-    if (!hbContent.includes("engram-compaction")) {
-      const compactionRotation = `
-### Memory Maintenance (each heartbeat)
-Check compaction triggers and run \`engram-compaction\` skill when any condition is met.
-Builds/updates the compaction tree (daily/weekly/monthly/root nodes) as new data arrives.
-`;
-      appendFileSync(heartbeatMd, compactionRotation);
-      console.log("  + added compaction rotation to HEARTBEAT.md");
-    }
-  }
 } else {
   // ── Claude Code path ──
   const rootImport = "@memory/ROOT.md\n";
@@ -342,9 +336,15 @@ if (existsSync(gitignorePath)) {
   console.log("  + created .gitignore with engram entries");
 }
 
-// ─── Step 9: Register PreCompact hook (Claude Code only) ───
+// ─── Step 9: Register pre-compaction hook ───
+
+// Both Claude Code and OpenClaw: run `engram compact` before context compression.
+// This backs up the transcript and runs mechanical compaction (copy/concat).
+
+const engramBin = join(ROOT, "cli", "init.mjs");
 
 if (!isOpenClaw) {
+  // Claude Code: register PreCompact hook in .claude/settings.json
   const settingsDir = join(CWD, ".claude");
   const settingsPath = join(settingsDir, "settings.json");
   let settings = {};
@@ -363,15 +363,31 @@ if (!isOpenClaw) {
         hooks: [
           {
             type: "command",
-            command: `DATE=$(date +%Y-%m-%d) && mkdir -p memory && cp "$TRANSCRIPT_PATH" "memory/.session-transcript-$DATE.bak"`,
-            timeout: 10000,
+            command: `node "${engramBin}" compact`,
+            timeout: 30000,
           },
         ],
       },
     ];
 
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
-    console.log("  + registered PreCompact hook (transcript backup before context compression)");
+    console.log("  + registered PreCompact hook (auto-compaction before context compression)");
+  }
+} else {
+  // OpenClaw: register pre-compaction hook in openclaw.json
+  if (existsSync(openclawJson)) {
+    try {
+      const oc = JSON.parse(readFileSync(openclawJson, "utf8"));
+      if (!oc.hooks?.preCompact) {
+        oc.hooks = oc.hooks || {};
+        oc.hooks.preCompact = {
+          command: `node "${engramBin}" compact`,
+          timeout: 30000,
+        };
+        writeFileSync(openclawJson, JSON.stringify(oc, null, 2) + "\n");
+        console.log("  + registered pre-compaction hook in openclaw.json");
+      }
+    } catch { /* openclaw.json not parseable */ }
   }
 }
 
