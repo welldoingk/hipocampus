@@ -56,13 +56,23 @@ After completing any task:
 1. **Update SCRATCHPAD** — current findings, pending decisions, cross-task lessons
 2. **Append to MEMORY.md** — APPEND ONLY: core facts, decisions, preferences, lessons. Never modify Core section.
 3. **Update USER.md** — new information learned about the user
-4. **Append to `memory/YYYY-MM-DD.md`** — detailed raw log entry (permanent record)
+4. **Append to `memory/YYYY-MM-DD.md`** — APPEND a detailed structured log of this session. For each topic discussed, include: what the user requested, what analysis/actions you performed, specific decisions made with rationale, user feedback/reactions, concrete values and data points, files created or modified, and references to knowledge/ files. Use `##` headings per topic. This is the compaction tree's source material — include enough detail that the daily compaction node can extract keywords, decisions, and patterns. Create `memory/` directory if needed.
 5. **Update WORKING** — mark task status (completed, blocked, in-progress)
 6. **Update TASK-QUEUE** — add follow-ups, archive completed items
 
 After modifying files, re-index: `qmd update`
 
 **Priority if timeout imminent:** daily raw > SCRATCHPAD > MEMORY > USER > WORKING > TASK-QUEUE
+
+## Proactive Session Dump
+
+**Do not wait for task completion to write to the daily log.** During long conversations or complex tasks, proactively append to `memory/YYYY-MM-DD.md` when:
+- The conversation has been going for ~20+ messages without a checkpoint
+- You sense the context is getting large
+- A significant decision or analysis was just completed, even if the overall task isn't done
+- You're switching between topics within the same task
+
+This protects against context compression — if the platform compresses your conversation history, undumped details are lost forever. Write early, write often. The daily log is append-only, so multiple dumps in the same session are fine.
 
 ## File Size Targets
 

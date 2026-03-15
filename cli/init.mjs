@@ -342,6 +342,39 @@ if (existsSync(gitignorePath)) {
   console.log("  + created .gitignore with engram entries");
 }
 
+// ─── Step 9: Register PreCompact hook (Claude Code only) ───
+
+if (!isOpenClaw) {
+  const settingsDir = join(CWD, ".claude");
+  const settingsPath = join(settingsDir, "settings.json");
+  let settings = {};
+
+  if (existsSync(settingsPath)) {
+    try { settings = JSON.parse(readFileSync(settingsPath, "utf8")); } catch { /* fresh start */ }
+  }
+
+  if (!settings.hooks?.PreCompact) {
+    if (!existsSync(settingsDir)) mkdirSync(settingsDir, { recursive: true });
+
+    settings.hooks = settings.hooks || {};
+    settings.hooks.PreCompact = [
+      {
+        matcher: "",
+        hooks: [
+          {
+            type: "command",
+            command: `DATE=$(date +%Y-%m-%d) && mkdir -p memory && cp "$TRANSCRIPT_PATH" "memory/.session-transcript-$DATE.bak"`,
+            timeout: 10000,
+          },
+        ],
+      },
+    ];
+
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+    console.log("  + registered PreCompact hook (transcript backup before context compression)");
+  }
+}
+
 // ─── Done ───
 
 console.log(`
