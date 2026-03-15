@@ -57,8 +57,8 @@ After completing any task:
 2. **Append to MEMORY.md** — APPEND ONLY: core facts, decisions, preferences, lessons. Never modify Core section.
 3. **Update USER.md** — new information learned about the user
 4. **Append to `memory/YYYY-MM-DD.md`** — APPEND a detailed structured log of this session. For each topic discussed, include: what the user requested, what analysis/actions you performed, specific decisions made with rationale, user feedback/reactions, concrete values and data points, files created or modified, and references to knowledge/ files. Use `##` headings per topic. This is the compaction tree's source material — include enough detail that the daily compaction node can extract keywords, decisions, and patterns. Create `memory/` directory if needed.
-5. **Update WORKING** — mark task status (completed, blocked, in-progress)
-6. **Update TASK-QUEUE** — add follow-ups, archive completed items
+5. **Update WORKING** — remove completed tasks, update in-progress/blocked status
+6. **Update TASK-QUEUE** — remove completed tasks, add any follow-up tasks discovered during work. The daily log is the permanent record of completed work — TASK-QUEUE is a backlog only.
 
 After modifying files, re-index: `qmd update`
 

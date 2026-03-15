@@ -239,8 +239,8 @@ This project uses engram 3-tier memory. Follow \`.claude/skills/engram-core/SKIL
 2. MEMORY.md — APPEND ONLY (never modify Core section)
 3. USER.md — newly learned user info
 4. memory/YYYY-MM-DD.md — append detailed record
-5. WORKING.md — update task status
-6. TASK-QUEUE.md — mark completed, add follow-ups
+5. WORKING.md — remove completed tasks, update status
+6. TASK-QUEUE.md — remove completed tasks, add follow-ups (daily log is the completion record)
 
 ### Rules
 - **Never skip checkpoints** — every task completion MUST trigger the 6-step checkpoint

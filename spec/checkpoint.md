@@ -70,15 +70,16 @@ After completing any meaningful task, persist context. All 6 steps must be compl
 - These are permanent raw records — be thorough
 
 ### Step 5: Update WORKING
-- Mark task status: completed, blocked, in-progress
-- Remove completed tasks (or move to Completed section)
+- Remove completed tasks — the daily log is the permanent completion record
+- Update in-progress/blocked status for remaining tasks
 - Add newly discovered sub-tasks
 - Write to the current domain's WORKING file
 
 ### Step 6: Update TASK-QUEUE.md
+- Remove completed tasks from the queue
 - Add follow-up items discovered during the task
-- Archive completed items to the Completed section
 - Re-prioritize if new information changes priorities
+- TASK-QUEUE is a backlog only — do not keep completed items here
 
 After all file modifications, re-index search:
 ```bash

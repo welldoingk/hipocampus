@@ -94,13 +94,11 @@ Task backlog.
 # Task Queue
 
 ## Queued
-<!-- task description — context sufficient to start after session reset -->
-
-## Completed
-<!-- task description — date completed -->
+<!-- task description — include enough context to start after session reset -->
+<!-- When completed, remove from here — the daily log is the permanent record -->
 ```
 
-Target: ~50 lines. When exceeded, archive completed items.
+Target: ~50 lines. TASK-QUEUE is a backlog only — completed tasks are removed, not archived here. The daily log (`memory/YYYY-MM-DD.md`) is the permanent record of completed work.
 
 ### memory/ROOT.md
 
