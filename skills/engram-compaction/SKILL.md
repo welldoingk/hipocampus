@@ -1,146 +1,183 @@
 ---
 name: engram-compaction
-description: Build hierarchical memory compaction tree (weekly/monthly summaries) for search fallback when qmd returns insufficient results. Run during heartbeat or memory maintenance.
+description: "Build 5-level compaction tree (daily/weekly/monthly/root) with smart thresholds and fixed/tentative lifecycle. Run at session start when triggers are met, or via external scheduler."
 ---
 
 # Memory Compaction Tree
 
-Hierarchical search index over daily memory logs. Weekly and monthly summaries are **index nodes** for tree traversal — originals are never deleted.
+5-level hierarchical index over raw memory logs. Compaction nodes are **search indices** — originals are never deleted.
 
 ## Hierarchy
 
 ```
 memory/
-  2026-03-01.md              <- daily (permanent, raw detail)
-  2026-03-02.md
-  weekly/2026-W09.md         <- weekly index (keyword-dense summary)
-  monthly/2026-02.md         <- monthly index (high-level overview)
+  ROOT.md                      <- root node (topic index, ~3K tokens, Layer 1)
+  2026-03-15.md                <- raw daily log (permanent, append-only)
+  daily/2026-03-15.md          <- daily compaction node
+  weekly/2026-W11.md           <- weekly compaction node
+  monthly/2026-03.md           <- monthly compaction node
 ```
 
-**Tree traversal**: monthly → weekly → daily. Start broad, drill down for detail.
+**Compaction chain:** Raw → Daily → Weekly → Monthly → Root
+
+**Tree traversal (search):** Root → Monthly → Weekly → Daily → Raw
+
+## Fixed vs Tentative Nodes
+
+Every compaction node has a status:
+- **tentative** — period is still ongoing, regenerated when new data arrives
+- **fixed** — period ended, never updated again
+
+```yaml
+# Indicated in YAML frontmatter
+---
+type: weekly
+status: tentative
+period: 2026-W11
+---
+```
+
+**Key: tentative nodes are created immediately — ROOT.md is usable from day one.**
 
 ## When to Run
 
-Run during memory maintenance (heartbeat, cron, or manual trigger). Check trigger conditions below.
+Called from engram-core Session Start step 7, or directly by an external scheduler (e.g., OpenClaw heartbeat). Check trigger conditions below.
 
 ## Trigger Conditions
 
-### Daily → Weekly
-ALL conditions must be true:
-- The ISO week has fully ended (today is in a later week)
-- All daily files for that week are >= 7 days old
-- At least 1 daily file exists for that week
-- No weekly summary exists yet (`memory/weekly/YYYY-WNN.md`)
+| Level | Tentative Create/Update | Fixed Transition |
+|-------|------------------------|-----------------|
+| Raw → Daily | On each new raw addition | Date changes |
+| Daily → Weekly | On daily add/change | ISO week ended + 7 days elapsed |
+| Weekly → Monthly | On weekly add/change | Month ended + 7 days elapsed |
+| Monthly → Root | On monthly add/change | Never (root accumulates forever) |
 
-### Weekly → Monthly
-ALL conditions must be true:
-- The calendar month has fully ended >= 7 days ago (today >= 8th of next month)
-- At least 1 weekly summary file exists for that month
-- No monthly summary exists yet (`memory/monthly/YYYY-MM.md`)
+## Smart Thresholds
+
+Below threshold: copy/concat verbatim (no information loss).
+Above threshold: generate LLM keyword-dense summary.
+
+| Level | Threshold | Above | Below |
+|-------|-----------|-------|-------|
+| Raw → Daily | ~200 lines | LLM keyword-dense summary | Copy raw verbatim |
+| Daily → Weekly | ~300 lines combined | LLM keyword-dense summary | Concat dailies |
+| Weekly → Monthly | ~500 lines combined | LLM keyword-dense summary | Concat weeklies |
+| Monthly → Root | Always | Recursive recompaction | (N/A) |
 
 ## Algorithm
 
 ### Step 1: Discover Candidates
 
-```bash
-ls -1 memory/*.md 2>/dev/null | grep -E '^memory/[0-9]{4}-[0-9]{2}-[0-9]{2}\.md$' | sort
-```
+Scan `memory/` for raw files. Group by date, ISO week, and month. Check each group against trigger conditions.
 
-For each daily file, compute the ISO week:
-```bash
-date -d 'YYYY-MM-DD' '+%G-W%V'
-```
+### Step 2: Daily Compaction (max 1 per cycle)
 
-Group files by ISO week. Check trigger conditions for each group.
+For each date where raw exists and daily needs create/update:
 
-### Step 2: Weekly Compaction (max 1 per heartbeat)
-
-1. Read all daily files for the target week
-2. Generate a keyword-dense weekly summary:
+1. Read raw file `memory/YYYY-MM-DD.md`
+2. Count lines — compare against ~200 line threshold
+3. Below threshold: copy raw verbatim to `memory/daily/YYYY-MM-DD.md`
+4. Above threshold: generate keyword-dense summary
+5. Write with frontmatter:
 
 ```markdown
 ---
-type: weekly-summary
-period: YYYY-WNN
-dates: YYYY-MM-DD to YYYY-MM-DD
-daily-files: memory/YYYY-MM-DD.md, ...
-topics: keyword1, keyword2, keyword3, keyword4, keyword5
+type: daily
+status: tentative
+period: YYYY-MM-DD
+source-files: [memory/YYYY-MM-DD.md]
+topics: [keyword1, keyword2, keyword3]
 ---
 
-# Weekly Summary: YYYY-WNN
-
 ## Topics
-keyword1, keyword2, keyword3, keyword4, keyword5
-
 ## Key Decisions
-- decision-keyword: chose X over Y — reason
-
 ## Tasks Completed
-- task-name: outcome
-
-## Entities Referenced
-users: user1, user2
-services: service1, service2
-
 ## Lessons Learned
-- lesson-keyword: concise rule
-
 ## Open Items
-- carried forward item
 ```
 
-3. Write to `memory/weekly/YYYY-WNN.md`
-4. Verify non-empty (>= 100 bytes)
-5. Re-index: `qmd update`
-6. If vector search enabled (check `engram.config.json`): `qmd embed`
+6. If date has changed (raw is from a past date): set `status: fixed`
 
-### Step 3: Monthly Compaction (max 1 per heartbeat)
+### Step 3: Weekly Compaction (max 1 per cycle)
 
-1. Read all weekly summaries for the target month
-2. Generate a keyword-dense monthly summary:
+For each ISO week where dailies exist and weekly needs create/update:
+
+1. Read all daily compaction files for that week
+2. Count combined lines — compare against ~300 line threshold
+3. Below threshold: concat all dailies
+4. Above threshold: generate keyword-dense weekly summary
+5. Write to `memory/weekly/YYYY-WNN.md` with frontmatter
+6. If ISO week ended + 7 days elapsed: set `status: fixed`
+
+### Step 4: Monthly Compaction (max 1 per cycle)
+
+For each month where weeklies exist and monthly needs create/update:
+
+1. Read all weekly compaction files for that month
+2. Count combined lines — compare against ~500 line threshold
+3. Below threshold: concat all weeklies
+4. Above threshold: generate keyword-dense monthly summary
+5. Write to `memory/monthly/YYYY-MM.md` with frontmatter
+6. If month ended + 7 days elapsed: set `status: fixed`
+
+### Step 5: Root Compaction
+
+When any monthly node is created or updated:
+
+1. Read existing `memory/ROOT.md` (if exists)
+2. Read the new/updated monthly node
+3. Recursive compaction: `root = recompact(existing_root + monthly_changes)`
+4. Write to `memory/ROOT.md`
+5. If root exceeds size cap (`compaction.rootMaxTokens` in config, default 3000 tokens / ~100 lines): self-compress — shrink older month sections first, keep recent months detailed
 
 ```markdown
 ---
-type: monthly-summary
-period: YYYY-MM
-weeks: YYYY-WNN, YYYY-WNN, ...
-topics: keyword1, keyword2, keyword3, keyword4, keyword5
+type: root
+status: tentative
+last-updated: YYYY-MM-DD
+months-covered: [2026-01, 2026-02, 2026-03]
 ---
 
-# Monthly Summary: YYYY-MM
+## 2026-03 (recent — detailed)
+- topic: keywords, key decisions, references
 
-## Topics
-keyword1, keyword2, keyword3, keyword4, keyword5
+## 2026-02 (compressed)
+- topic: keywords
 
-## Key Themes
-- theme-keyword: description across multiple weeks
-
-## Major Decisions
-- decision-keyword: chose X over Y — reason
-
-## Completed Work
-- project/task: outcome summary
-
-## Recurring Entities
-users: user1, user2
-services: service1, service2
-
-## Lessons & Patterns
-- lesson-keyword: concise rule (emerged over N weeks)
-
-## Carried Forward
-- item still open at month end
+## 2026-01 (highly compressed)
+- topic: keywords
 ```
 
-3. Write to `memory/monthly/YYYY-MM.md`
-4. Verify non-empty (>= 100 bytes)
-5. Re-index: `qmd update`
-6. If vector search enabled: `qmd embed`
+### Step 6: Re-index
+
+After writing any compaction files:
+
+```bash
+qmd update
+```
+
+If vector search is enabled (`search.vector: true` in `engram.config.json`):
+
+```bash
+qmd embed
+```
 
 ## Guards
 
-- Maximum 1 weekly + 1 monthly compaction per heartbeat
-- Never write a summary shorter than 50 bytes
-- If reading a file fails, skip it — do not abort entire compaction
-- **Never delete daily or weekly files**
-- **MEMORY.md Core section is frozen** — only prune Adaptive section
+- Raw files: **never delete** (permanent leaf nodes)
+- Max 1 daily + 1 weekly + 1 monthly + 1 root per compaction cycle
+- No empty summaries (minimum 50 bytes)
+- Skip failed file reads — never abort entire compaction
+- qmd update failure: warning only, not fatal
+- Root self-compresses when exceeding size cap (shrink older topics first)
+- Keyword-dense format only — no prose, no narrative. Optimized for BM25 recall.
+
+## Edge Cases
+
+- **Empty days:** No daily compaction node is generated for days without raw logs. Weekly naturally skips those days.
+- **First day:** Create the full tentative tree immediately (daily → weekly → monthly → root). ROOT.md is usable from day one.
+- **Lifecycle example:**
+  - Day 1: raw created → daily(tentative) → weekly(tentative) → monthly(tentative) → ROOT
+  - Day 2: daily(tentative) updated, weekly(tentative) updated, monthly(tentative) updated, ROOT updated
+  - Week ends + 7 days: weekly → fixed, new weekly(tentative) starts
+  - Month ends + 7 days: monthly → fixed, new monthly(tentative) starts
