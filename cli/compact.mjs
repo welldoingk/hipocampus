@@ -91,6 +91,13 @@ for (const date of rawDates) {
 
   const rawPath = join(MEMORY, `${date}.md`);
   const dailyPath = join(dailyDir, `${date}.md`);
+
+  // Skip if daily node already exists and is fixed (no need to rewrite)
+  if (existsSync(dailyPath)) {
+    const existing = readFileSync(dailyPath, "utf8");
+    if (existing.includes("status: fixed")) continue;
+  }
+
   const rawLines = countLines(rawPath);
 
   if (rawLines === 0) continue;
@@ -249,8 +256,8 @@ if (dailyUpdated || weeklyUpdated || monthlyUpdated) {
         const rootBody = rootContent.replace(/^---[\s\S]*?---\n*/, "")
           .replace(/^## /gm, "### "); // demote headings to fit inside MEMORY.md
         const updated = memContent.replace(
-          /## Compaction Root[\s\S]*$/,
-          `## Compaction Root\n<!-- Auto-synced from memory/ROOT.md by engram compact -->\n\n${rootBody}`
+          /## Compaction Root[\s\S]*?(?=\n## |$)/,
+          `## Compaction Root\n<!-- Auto-synced from memory/ROOT.md by engram compact -->\n\n${rootBody}\n`
         );
         writeFileSync(memoryMdPath, updated);
       }

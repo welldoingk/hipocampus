@@ -63,11 +63,12 @@ After completing any meaningful task, persist context. All 6 steps must be compl
 - Preferences, expertise, communication patterns
 - Only update sections where new information was actually learned
 
-### Step 4: Append to daily raw log
+### Step 4: Append structured log to daily raw log
 - Write to `memory/YYYY-MM-DD.md` (using the date the session started)
-- Detailed record: what was discussed, decided, accomplished, code written, errors encountered
-- Include context that would not fit in MEMORY.md's ~50-line limit
-- These are permanent raw records — be thorough
+- For each topic discussed, include: what the user requested, what analysis/actions you performed, specific decisions made with rationale, user feedback/reactions, concrete values and data points, files created or modified, and references to knowledge/ files
+- Use `##` headings per topic — this is the compaction tree's source material
+- Include enough detail that the daily compaction node can extract keywords, decisions, and patterns
+- These are permanent raw records — be thorough, not summarized
 
 ### Step 5: Update WORKING
 - Remove completed tasks — the daily log is the permanent completion record
