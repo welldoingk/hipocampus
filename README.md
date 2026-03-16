@@ -180,15 +180,16 @@ Below threshold, source files are copied/concatenated verbatim — no informatio
 
 ### How hipocampus compares
 
-| | Working state only | MEMORY.md only | RAG only | **Hipocampus** |
-|---|---|---|---|---|
-| Current task awareness | Yes | No | No | **Yes — SCRATCHPAD + WORKING** |
-| Remembers past sessions | No | Until overflow | If you search for it | **Always — tiered storage** |
-| Knows what it knows | Current only | ~50 lines | Only if right query | **ROOT.md (~3K tokens)** |
-| Scales over months | No | No | Yes (blind) | **Yes — self-compressing tree** |
-| Cost per API call | Low | Low | Low | **Low (~3K extra tokens)** |
-| Setup | Manual | Manual | Server + config | **`npx hipocampus init`** |
-| Infrastructure | None | None | Vector DB | **None — just files** |
+| | Ad-hoc MEMORY.md | OpenViking | **Hipocampus** |
+|---|---|---|---|
+| Setup | Manual | Python server + embedding model + config | **`npx hipocampus init`** |
+| Infrastructure | None | Server + DB | **None — just files** |
+| Search | None | Vector + directory recursive | **BM25 + vector hybrid (via qmd)** |
+| Memory structure | Unstructured | Filesystem paradigm | **3-tier (hot/warm/cold)** |
+| Agent integration | DIY | Plugin API | **Drop-in skills** |
+| Cost optimization | None | L0/L1/L2 tiered loading | **Prompt cache friendly** |
+| Knows what it knows | Only what fits (~50 lines) | No (search required) | **ROOT.md (~3K tokens)** |
+| Scales over months | No — overflows | Yes | **Yes — self-compressing tree** |
 
 ## How It Runs
 
@@ -443,10 +444,6 @@ The memory system is formally specified in [`spec/`](./spec/):
 **What to commit:** `hipocampus.config.json` and `.claude/skills/` — these define the shared project memory structure. All team members get the same skill documents.
 
 **What not to commit:** Everything else (MEMORY.md, USER.md if present, SCRATCHPAD, WORKING, TASK-QUEUE, memory/, knowledge/, plans/) is personal context. Each developer runs `npx hipocampus init` to set up their own memory.
-
-## Built at clawy.pro
-
-Hipocampus is extracted from the memory system powering 80+ production AI bots at [clawy.pro](https://clawy.pro). It's been running in production since early 2026, handling thousands of conversations across diverse use cases.
 
 ## License
 
