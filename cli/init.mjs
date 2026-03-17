@@ -147,26 +147,34 @@ copyTemplate("WORKING.md");
 
 // ─── Step 4: Install skills ───
 
-const skillNames = ["hipocampus-core", "hipocampus-compaction", "hipocampus-search", "hipocampus-flush"];
+// Platform-specific core skill + shared skills
+const coreSkillSrc = isOpenClaw ? "hipocampus-core-oc" : "hipocampus-core-cc";
+const sharedSkills = ["hipocampus-compaction", "hipocampus-search", "hipocampus-flush"];
+const allSkillSources = [coreSkillSrc, ...sharedSkills];
+// Installed as hipocampus-core (not hipocampus-core-cc/oc)
+const allSkillDests = ["hipocampus-core", ...sharedSkills];
+
 // Claude Code: .claude/skills/  |  OpenClaw: skills/
 const skillsBase = isOpenClaw ? join(CWD, "skills") : join(CWD, ".claude", "skills");
 
-for (const skill of skillNames) {
-  const destDir = join(skillsBase, skill);
+for (let i = 0; i < allSkillSources.length; i++) {
+  const srcName = allSkillSources[i];
+  const destName = allSkillDests[i];
+  const destDir = join(skillsBase, destName);
   const destFile = join(destDir, "SKILL.md");
-  const src = join(ROOT, "skills", skill, "SKILL.md");
+  const src = join(ROOT, "skills", srcName, "SKILL.md");
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
   // Always overwrite — ensures updates propagate on reinstall/upgrade
   if (existsSync(src)) {
     copyFileSync(src, destFile);
-    console.log(`  + skill: ${skill}`);
+    console.log(`  + skill: ${destName}`);
   }
 }
 
-// Migration: remove skills from wrong location (.claude/skills on OpenClaw, skills/ on Claude Code)
+// Migration: remove skills from wrong location (.claude/skills on OpenClaw)
 if (isOpenClaw) {
   const wrongBase = join(CWD, ".claude", "skills");
-  for (const skill of skillNames) {
+  for (const skill of allSkillDests) {
     const wrongDir = join(wrongBase, skill);
     if (existsSync(wrongDir)) {
       const { rmSync } = await import("node:fs");
