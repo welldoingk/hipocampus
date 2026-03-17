@@ -1,0 +1,891 @@
+From 81e2782f8384cd4a30a1e96a8c67cc972f0089d9 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Mar 2026 08:46:58 +0000
+Subject: [PATCH 1/2] docs: add comprehensive CLAUDE.md for AI assistant
+ onboarding
+
+Covers project structure, tech stack, architecture (3-tier memory,
+5-level compaction tree), commands, code conventions, platform support,
+and key files to help AI assistants quickly understand the codebase.
+
+https://claude.ai/code/session_01WkeN25j7WE7erkyRM33v9G
+---
+ CLAUDE.md | 145 ++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 145 insertions(+)
+ create mode 100644 CLAUDE.md
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 0000000..4c11bc6
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,145 @@
++# CLAUDE.md — Hipocampus
++
++## Project Overview
++
++Hipocampus is a drop-in memory harness for AI agents. It provides persistent, structured memory across sessions using a 3-tier architecture (hot/warm/cold) with a 5-level compaction tree and optional hybrid search (BM25 + vector via qmd).
++
++- **Version:** 0.1.6
++- **License:** MIT
++- **Repository:** https://github.com/kevin-hs-sohn/hipocampus
++
++## Tech Stack
++
++- **Language:** JavaScript (ES6 modules, `.mjs` files)
++- **Runtime:** Node.js >= 18
++- **Module system:** ESM (`"type": "module"` in package.json)
++- **External dependencies:** None — uses only Node.js built-ins (`node:fs`, `node:child_process`, `node:path`, `node:url`)
++- **Optional tool:** `qmd` for BM25 + vector search
++
++## Repository Structure
++
++```
++cli/                          # CLI entry points
++  init.mjs                    # `hipocampus init` — 9-step initialization
++  compact.mjs                 # `hipocampus compact` — mechanical compaction (no LLM)
++skills/                       # Agent skill definitions (SKILL.md files)
++  hipocampus-core-cc/         # Session protocol for Claude Code
++  hipocampus-core-oc/         # Session protocol for OpenClaw
++  hipocampus-core-shared/     # Shared memory mode (cross-platform)
++  hipocampus-compaction/      # 5-level compaction tree builder
++  hipocampus-search/          # Search guide (ROOT.md judgment, qmd, tree traversal)
++  hipocampus-flush/           # Manual flush (user-invocable)
++spec/                         # Formal specifications
++  layers.md                   # 3-tier architecture
++  compaction.md               # Compaction algorithm
++  file-formats.md             # Exact format specs for all memory files
++  checkpoint.md               # Session & checkpoint protocol
++templates/                    # Template files copied during init
++  SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, MEMORY.md, USER.md, HEARTBEAT.md
++```
++
++## Commands
++
++```bash
++# Install globally
++npm install -g hipocampus
++
++# Initialize memory system in a project
++npx hipocampus init
++npx hipocampus init --no-vector        # BM25 only, skip embeddings (~2GB)
++npx hipocampus init --no-search        # Skip qmd entirely
++npx hipocampus init --shared-memory    # Cross-platform file-based memory
++npx hipocampus init --platform claude-code
++npx hipocampus init --platform openclaw
++
++# Run mechanical compaction manually
++npx hipocampus compact
++```
++
++There are no build, test, or lint commands — the project distributes source directly.
++
++## Code Conventions
++
++- **2-space indentation** throughout
++- **ES6 modules** with `.mjs` extensions and `import`/`export` syntax
++- **Sync operations** preferred (`execSync`, `fs.readFileSync`, `fs.writeFileSync`) — the CLI runs sequentially
++- **Guard clauses** for early returns on platform/config detection
++- **Silent fallbacks** for optional tools (qmd may not be installed)
++- **No external dependencies** — keep it that way; use only Node.js built-ins
++- **No linter or formatter configured** — maintain existing style when editing
++
++## Architecture
++
++### 3-Tier Memory
++
++| Tier | Name | Content | Access |
++|------|------|---------|--------|
++| Layer 1 | Hot | SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, ROOT.md | Always loaded in system prompt (~500 lines) |
++| Layer 2 | Warm | Raw daily logs (`memory/YYYY-MM-DD.md`), `knowledge/*.md`, `plans/*.md` | On-demand file reads |
++| Layer 3 | Cold | Compaction tree nodes (daily/weekly/monthly), qmd search index | Search or tree traversal |
++
++### 5-Level Compaction Tree
++
++```
++Raw logs (memory/YYYY-MM-DD.md) — permanent, append-only
++    ↓ threshold: ~200 lines
++Daily nodes (memory/daily/YYYY-MM-DD.md)
++    ↓ threshold: ~300 lines
++Weekly nodes (memory/weekly/YYYY-WNN.md)
++    ↓ threshold: ~500 lines
++Monthly nodes (memory/monthly/YYYY-MM.md)
++    ↓ always LLM
++ROOT.md (memory/ROOT.md) — self-compresses at ~3K tokens
++```
++
++**Status lifecycle:** `tentative` (period active, regenerated on new data) → `fixed` (period ended, never updated).
++
++### Execution Model
++
++1. **Session Start** — read hot memory, dispatch compaction subagent
++2. **End-of-Task Checkpoint** — subagent appends structured log to raw daily file
++3. **Proactive Flush** — subagent dumps context every ~20 messages or on topic switch
++4. **Pre-Compaction Hook** — mechanical (no LLM): backup, compact tree, update ROOT.md, reindex qmd
++
++All memory writes dispatch to subagents to keep the main session context clean.
++
++## Key Files
++
++| File | Purpose |
++|------|---------|
++| `cli/init.mjs` | Main entry point — 9-step init (platform detection, template copy, skill install, hook registration) |
++| `cli/compact.mjs` | Mechanical compaction with smart thresholds (200/300/500 lines) |
++| `skills/hipocampus-compaction/SKILL.md` | LLM-driven compaction instructions (242 lines) |
++| `skills/hipocampus-search/SKILL.md` | Search protocol (ROOT.md → qmd → tree traversal) |
++| `spec/file-formats.md` | Canonical format for every memory file |
++| `spec/compaction.md` | Full compaction algorithm spec |
++
++## Platform Support
++
++The project targets two platforms:
++
++- **Claude Code** — Skills install to `.claude/skills/`, hooks registered in `.claude/settings.json`, memory loaded via auto-memory
++- **OpenClaw** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, hooks via AGENTS.md
++
++Platform is auto-detected during `init` (presence of `AGENTS.md` → OpenClaw, otherwise → Claude Code).
++
++## Configuration
++
++Generated at init time as `hipocampus.config.json`:
++
++```json
++{
++  "platform": "claude-code",
++  "sharedMemory": false,
++  "search": { "vector": true, "embedModel": "auto" },
++  "compaction": { "rootMaxTokens": 3000 }
++}
++```
++
++## Development Notes
++
++- This is a CLI tool distributed via npm — no build step needed
++- The `files` field in package.json controls what ships: `cli/`, `spec/`, `templates/`, `skills/`, `LICENSE`, `README.md`
++- When adding new skills, follow the existing `skills/<name>/SKILL.md` pattern
++- Compaction thresholds are intentionally conservative — below-threshold content is copied verbatim to avoid information loss
++- The `--shared-memory` mode uses `hipocampus-core-shared` instead of platform-specific core skills
+-- 
+2.43.0
+
+
+From a30a4b9d3aa53a487f4e76a9fa9f57fcb254e4e3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 17 Mar 2026 09:03:50 +0000
+Subject: [PATCH 2/2] feat: add Codex and Gemini CLI platform support
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Add two new platforms alongside Claude Code and OpenClaw:
+- Codex (OpenAI): AGENTS.md-based protocol injection, file-based MEMORY.md/USER.md, skills in skills/
+- Gemini CLI: GEMINI.md-based protocol injection, file-based MEMORY.md/USER.md, skills in skills/
+
+Changes:
+- New skills: hipocampus-core-codex, hipocampus-core-gemini
+- Updated cli/init.mjs: platform detection (openclaw.json → OpenClaw, GEMINI.md → Gemini, AGENTS.md → OpenClaw, else → Claude Code), protocol injection, skill installation
+- Updated README.md and CLAUDE.md with 4-platform documentation
+- Added codex/gemini keywords to package.json
+
+https://claude.ai/code/session_01WkeN25j7WE7erkyRM33v9G
+---
+ CLAUDE.md                              |  10 +-
+ README.md                              |  36 +++--
+ cli/init.mjs                           | 201 ++++++++++++++++++-------
+ package.json                           |   4 +
+ skills/hipocampus-core-codex/SKILL.md  |  97 ++++++++++++
+ skills/hipocampus-core-gemini/SKILL.md |  97 ++++++++++++
+ 6 files changed, 374 insertions(+), 71 deletions(-)
+ create mode 100644 skills/hipocampus-core-codex/SKILL.md
+ create mode 100644 skills/hipocampus-core-gemini/SKILL.md
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 4c11bc6..8f8fb34 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -25,6 +25,8 @@ cli/                          # CLI entry points
+ skills/                       # Agent skill definitions (SKILL.md files)
+   hipocampus-core-cc/         # Session protocol for Claude Code
+   hipocampus-core-oc/         # Session protocol for OpenClaw
++  hipocampus-core-codex/      # Session protocol for Codex
++  hipocampus-core-gemini/     # Session protocol for Gemini CLI
+   hipocampus-core-shared/     # Shared memory mode (cross-platform)
+   hipocampus-compaction/      # 5-level compaction tree builder
+   hipocampus-search/          # Search guide (ROOT.md judgment, qmd, tree traversal)
+@@ -51,6 +53,8 @@ npx hipocampus init --no-search        # Skip qmd entirely
+ npx hipocampus init --shared-memory    # Cross-platform file-based memory
+ npx hipocampus init --platform claude-code
+ npx hipocampus init --platform openclaw
++npx hipocampus init --platform codex
++npx hipocampus init --platform gemini
+ 
+ # Run mechanical compaction manually
+ npx hipocampus compact
+@@ -116,12 +120,14 @@ All memory writes dispatch to subagents to keep the main session context clean.
+ 
+ ## Platform Support
+ 
+-The project targets two platforms:
++The project targets four platforms:
+ 
+ - **Claude Code** — Skills install to `.claude/skills/`, hooks registered in `.claude/settings.json`, memory loaded via auto-memory
+ - **OpenClaw** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, hooks via AGENTS.md
++- **Codex** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, protocol injected into AGENTS.md
++- **Gemini CLI** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, protocol injected into GEMINI.md
+ 
+-Platform is auto-detected during `init` (presence of `AGENTS.md` → OpenClaw, otherwise → Claude Code).
++Platform is auto-detected during `init` (`openclaw.json` → OpenClaw, `GEMINI.md` → Gemini, `AGENTS.md` → OpenClaw, otherwise → Claude Code). Use `--platform codex` to explicitly select Codex.
+ 
+ ## Configuration
+ 
+diff --git a/README.md b/README.md
+index 6a86807..ffef97c 100644
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ Drop-in memory harness for AI agents. Zero infrastructure — just files.
+ 
+-3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code) and [OpenClaw](https://github.com/openclaw) bots.
++3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code), [OpenClaw](https://github.com/openclaw), [Codex](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
+ 
+ ## Quick Start
+ 
+@@ -13,8 +13,8 @@ npx hipocampus init
+ This creates the full memory structure in your project:
+ 
+ ```
+-MEMORY.md              # Long-term memory (OpenClaw only — Claude Code uses platform auto memory)
+-USER.md                # User profile (OpenClaw only — Claude Code uses platform auto memory)
++MEMORY.md              # Long-term memory (OpenClaw/Codex/Gemini — Claude Code uses platform auto memory)
++USER.md                # User profile (OpenClaw/Codex/Gemini — Claude Code uses platform auto memory)
+ SCRATCHPAD.md          # Active working state
+ WORKING.md             # Current tasks in progress
+ TASK-QUEUE.md          # Task backlog (queued items only)
+@@ -27,7 +27,7 @@ hipocampus.config.json     # Configuration
+ 
+ It also:
+ - Installs [qmd](https://github.com/tobi/qmd) for hybrid search (skip with `--no-search`)
+-- Injects the memory protocol into CLAUDE.md (Claude Code) or AGENTS.md (OpenClaw)
++- Injects the memory protocol into CLAUDE.md (Claude Code), AGENTS.md (OpenClaw/Codex), or GEMINI.md (Gemini CLI)
+ - Registers a pre-compaction hook for automatic memory preservation
+ - Auto-loads ROOT.md into the agent's system prompt
+ - Adds memory files to `.gitignore`
+@@ -44,11 +44,13 @@ npx hipocampus init --no-search
+ # Override platform detection (auto-detects by default)
+ npx hipocampus init --platform claude-code
+ npx hipocampus init --platform openclaw
++npx hipocampus init --platform codex
++npx hipocampus init --platform gemini
+ ```
+ 
+ ## What You Get
+ 
+-Install hipocampus on a Claude Code or OpenClaw project, and your agent gains **persistent memory across sessions**. It remembers what you worked on, what decisions were made, what lessons were learned — and it knows what it knows without loading everything into context.
++Install hipocampus on a Claude Code, OpenClaw, Codex, or Gemini CLI project, and your agent gains **persistent memory across sessions**. It remembers what you worked on, what decisions were made, what lessons were learned — and it knows what it knows without loading everything into context.
+ 
+ The effect is similar to injecting your entire conversation history into every API call, but at a fraction of the token cost (~3K tokens instead of 100K+).
+ 
+@@ -104,8 +106,8 @@ Injected into every API call. The agent's "working memory" — what it needs to
+ | **WORKING.md** | Tasks in progress — status, blockers, next steps | Without this, the agent doesn't know what tasks are active |
+ | **TASK-QUEUE.md** | Backlog of pending tasks | Without this, follow-up tasks from prior sessions are lost |
+ | **memory/ROOT.md** | Compaction tree root — compressed index of ALL accumulated history (~100 lines) | **The key innovation.** This is what gives the agent awareness of its entire past at ~3K tokens. Like injecting all history, but 50x cheaper. |
+-| **MEMORY.md** | Long-term facts, rules, lessons (OpenClaw only — Claude Code uses platform auto memory) | Core facts that apply to every interaction |
+-| **USER.md** | User profile, preferences (OpenClaw only) | Personalization across sessions |
++| **MEMORY.md** | Long-term facts, rules, lessons (OpenClaw/Codex/Gemini — Claude Code uses platform auto memory) | Core facts that apply to every interaction |
++| **USER.md** | User profile, preferences (OpenClaw/Codex/Gemini) | Personalization across sessions |
+ 
+ **ROOT.md deserves special attention.** It's a ~100-line functional index that compresses ALL past conversations and work into four sections:
+ 
+@@ -199,14 +201,14 @@ Hipocampus has four execution mechanisms — all set up automatically by `npx hi
+ 
+ ### 1. Session Protocol (agent-driven)
+ 
+-The hipocampus-core skill instructs the agent what to do at session start and after every task. This is injected into CLAUDE.md (Claude Code) or AGENTS.md (OpenClaw) during init, so the agent follows it automatically.
++The hipocampus-core skill instructs the agent what to do at session start and after every task. This is injected into CLAUDE.md (Claude Code), AGENTS.md (OpenClaw/Codex), or GEMINI.md (Gemini CLI) during init, so the agent follows it automatically.
+ 
+ **Session Start (FIRST RESPONSE RULE — runs before anything else on first user message):**
+ 
+ ```
+ 1. Read hipocampus.config.json → determine platform
+-2. OpenClaw only: Read MEMORY.md (long-term memory)
+-3. OpenClaw only: Read USER.md (user profile)
++2. OpenClaw/Codex/Gemini: Read MEMORY.md (long-term memory)
++3. OpenClaw/Codex/Gemini: Read USER.md (user profile)
+ 4. Claude Code legacy: Read MEMORY.md if it exists (migration support)
+ 5. Read SCRATCHPAD.md — current work state
+ 6. Read WORKING.md — active tasks
+@@ -224,9 +226,9 @@ After completing any task, the agent composes a task summary and dispatches a su
+ 
+ ```
+ 1. Update SCRATCHPAD — findings, decisions, lessons
+-2. OpenClaw: Append to MEMORY.md — APPEND ONLY, never modify Core section
++2. OpenClaw/Codex/Gemini: Append to MEMORY.md — APPEND ONLY, never modify Core section
+    Claude Code: Save facts/lessons to platform memory (auto memory handles this natively)
+-3. OpenClaw only: Update USER.md — newly learned user info
++3. OpenClaw/Codex/Gemini: Update USER.md — newly learned user info
+ 4. Append structured log to memory/YYYY-MM-DD.md (see below)
+ 5. Update WORKING — remove completed tasks
+ 6. Update TASK-QUEUE — remove completed tasks, add follow-ups
+@@ -323,8 +325,10 @@ ROOT.md must be in the agent's context at every session start. Each platform has
+ |----------|-----------|-------------------|
+ | Claude Code | `@memory/ROOT.md` import in CLAUDE.md | Automatic |
+ | OpenClaw | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
++| Codex | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
++| Gemini CLI | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
+ 
+-OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.) — ROOT.md can't be added to that list. Instead, hipocampus embeds the ROOT content as a section inside MEMORY.md, which is always bootstrapped. The `hipocampus compact` command keeps this section in sync with `memory/ROOT.md`.
++OpenClaw, Codex, and Gemini CLI bootstrap a fixed set of files — ROOT.md can't be added to their bootstrap lists. Instead, hipocampus embeds the ROOT content as a section inside MEMORY.md, which is always loaded. The `hipocampus compact` command keeps this section in sync with `memory/ROOT.md`.
+ 
+ ### Execution Summary
+ 
+@@ -346,8 +350,8 @@ Everything is set up by `npx hipocampus init`. The user never has to think about
+ 
+ ```
+ project/
+-├── MEMORY.md                        (OpenClaw only)
+-├── USER.md                          (OpenClaw only)
++├── MEMORY.md                        (OpenClaw/Codex/Gemini)
++├── USER.md                          (OpenClaw/Codex/Gemini)
+ ├── SCRATCHPAD.md
+ ├── WORKING.md
+ ├── TASK-QUEUE.md
+@@ -388,7 +392,7 @@ project/
+ 
+ | Field | Type | Default | Description |
+ |-------|------|---------|-------------|
+-| `platform` | string | auto-detected | `"claude-code"` or `"openclaw"` — determines memory file behavior |
++| `platform` | string | auto-detected | `"claude-code"`, `"openclaw"`, `"codex"`, or `"gemini"` — determines memory file behavior |
+ | `search.vector` | boolean | `true` | Enable vector embeddings (~2GB disk) |
+ | `search.embedModel` | string | `"auto"` | `"auto"` for embeddinggemma-300M, `"qwen3"` for CJK-optimized |
+ | `compaction.rootMaxTokens` | number | `3000` | Max token budget for ROOT.md (~100 lines) |
+diff --git a/cli/init.mjs b/cli/init.mjs
+index eeae805..146d220 100755
+--- a/cli/init.mjs
++++ b/cli/init.mjs
+@@ -25,7 +25,7 @@ if (!command || command === "--help" || command === "-h") {
+   Options:
+     --no-vector        Disable vector search (saves ~2GB disk, no embedding models)
+     --no-search        Skip qmd installation and search setup (compaction tree still works)
+-    --platform <name>  Override platform detection (claude-code or openclaw)
++    --platform <name>  Override platform detection (claude-code, openclaw, codex, or gemini)
+     --help, -h         Show this help
+ `);
+   process.exit(0);
+@@ -48,8 +48,8 @@ const noSearch = args.includes("--no-search");
+ const sharedMemory = args.includes("--shared-memory");
+ const platformIdx = args.indexOf("--platform");
+ const platformOverride = platformIdx !== -1 ? args[platformIdx + 1] : null;
+-if (platformOverride && !["claude-code", "openclaw"].includes(platformOverride)) {
+-  console.error(`  ! Unknown platform: ${platformOverride}. Use "claude-code" or "openclaw".`);
++if (platformOverride && !["claude-code", "openclaw", "codex", "gemini"].includes(platformOverride)) {
++  console.error(`  ! Unknown platform: ${platformOverride}. Use "claude-code", "openclaw", "codex", or "gemini".`);
+   process.exit(1);
+ }
+ 
+@@ -92,12 +92,28 @@ for (const dir of dirs) {
+ 
+ const agentsMd = join(CWD, "AGENTS.md");
+ const claudeMd = join(CWD, "CLAUDE.md");
++const geminiMd = join(CWD, "GEMINI.md");
+ const openclawJson = join(CWD, "openclaw.json");
+ 
+-const isOpenClaw = platformOverride
+-  ? platformOverride === "openclaw"
+-  : existsSync(agentsMd);
+-const platform = isOpenClaw ? "openclaw" : "claude-code";
++let platform;
++if (platformOverride) {
++  platform = platformOverride;
++} else if (existsSync(openclawJson)) {
++  platform = "openclaw";
++} else if (existsSync(geminiMd)) {
++  platform = "gemini";
++} else if (existsSync(agentsMd)) {
++  // AGENTS.md is used by both OpenClaw and Codex.
++  // With openclaw.json absent, default to openclaw for backward compatibility.
++  // Use --platform codex to override.
++  platform = "openclaw";
++} else {
++  platform = "claude-code";
++}
++const isOpenClaw = platform === "openclaw";
++const isCodex = platform === "codex";
++const isGemini = platform === "gemini";
++const isAgentsMdPlatform = isOpenClaw || isCodex; // platforms that use AGENTS.md
+ 
+ console.log(`  ~ platform: ${platform}`);
+ if (sharedMemory) console.log(`  ~ shared memory mode: MEMORY.md + USER.md shared across platforms`);
+@@ -112,7 +128,7 @@ function copyTemplate(filename, destName) {
+   }
+ }
+ 
+-if (isOpenClaw || sharedMemory) {
++if (isOpenClaw || isCodex || isGemini || sharedMemory) {
+   copyTemplate("MEMORY.md");
+   copyTemplate("USER.md");
+ }
+@@ -155,6 +171,10 @@ copyTemplate("WORKING.md");
+ let coreSkillSrc;
+ if (sharedMemory) {
+   coreSkillSrc = "hipocampus-core-shared";
++} else if (isCodex) {
++  coreSkillSrc = "hipocampus-core-codex";
++} else if (isGemini) {
++  coreSkillSrc = "hipocampus-core-gemini";
+ } else {
+   coreSkillSrc = isOpenClaw ? "hipocampus-core-oc" : "hipocampus-core-cc";
+ }
+@@ -163,8 +183,8 @@ const allSkillSources = [coreSkillSrc, ...sharedSkills];
+ // Installed as hipocampus-core (not hipocampus-core-cc/oc)
+ const allSkillDests = ["hipocampus-core", ...sharedSkills];
+ 
+-// Claude Code: .claude/skills/  |  OpenClaw: skills/
+-const skillsBase = isOpenClaw ? join(CWD, "skills") : join(CWD, ".claude", "skills");
++// Claude Code: .claude/skills/  |  OpenClaw/Codex/Gemini: skills/
++const skillsBase = (isOpenClaw || isCodex || isGemini) ? join(CWD, "skills") : join(CWD, ".claude", "skills");
+ 
+ for (let i = 0; i < allSkillSources.length; i++) {
+   const srcName = allSkillSources[i];
+@@ -180,8 +200,8 @@ for (let i = 0; i < allSkillSources.length; i++) {
+   }
+ }
+ 
+-// Migration: remove skills from wrong location (.claude/skills on OpenClaw)
+-if (isOpenClaw) {
++// Migration: remove skills from wrong location (.claude/skills on non-Claude Code platforms)
++if (isOpenClaw || isCodex || isGemini) {
+   const wrongBase = join(CWD, ".claude", "skills");
+   for (const skill of allSkillDests) {
+     const wrongDir = join(wrongBase, skill);
+@@ -351,24 +371,76 @@ After completing any task, **dispatch a subagent** to:
+ - If this session ends NOW, the next session must be able to continue immediately
+ `;
+ 
++// Codex uses AGENTS.md (like OpenClaw) but without subagent support
++const PROTOCOL_BLOCK_CODEX = `
++## Hipocampus — Memory Protocol
+ 
++This project uses hipocampus 3-tier memory. Follow \`skills/hipocampus-core/SKILL.md\`.
+ 
+-if (isOpenClaw) {
+-  // ── OpenClaw path ──
+-  if (existsSync(agentsMd)) {
+-    const content = readFileSync(agentsMd, "utf8");
+-    if (!hasHipocampus(content)) {
+-      // Prepend: protocol block at top of AGENTS.md (highest priority)
+-      const newContent = PROTOCOL_BLOCK_OC.trimStart() + "\n" + content;
+-      writeFileSync(agentsMd, newContent);
+-      console.log("  + added hipocampus protocol (top) to AGENTS.md");
+-    }
+-  }
++### FIRST RESPONSE RULE — MANDATORY
++**On the very first user message of every session**, before doing ANYTHING else:
++Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
++
++### Session Start (run on first user message, every step required.)
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++1. **DO NOT SKIP** Read \`SCRATCHPAD.md\` — current work state
++2. **DO NOT SKIP** Read \`WORKING.md\` — active tasks
++3. **DO NOT SKIP** Read \`TASK-QUEUE.md\` — pending items
++4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance:** Read \`skills/hipocampus-compaction/SKILL.md\` and follow its compaction chain (Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first.
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++
++Note: MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded by the platform.
++
++### End-of-Task Checkpoint (mandatory)
++After completing any task, append a structured log to \`memory/YYYY-MM-DD.md\`.
++Compose the log with ## headings per topic: what was requested, analysis, decisions with rationale, outcomes, files changed.
++**The daily log is the source of truth.** Everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
++
++### Rules
++- **Never skip Session Start** — every session begins with it, no exceptions
++- **Never skip checkpoints** — every task completion MUST append to daily log
++- MEMORY.md Core section: never modify or delete
++- memory/*.md (raw): permanent, never delete
++- Search: see \`skills/hipocampus-search/SKILL.md\`
++- If this session ends NOW, the next session must be able to continue immediately
++`;
++
++// Gemini CLI uses GEMINI.md
++const PROTOCOL_BLOCK_GEMINI = `
++## Hipocampus — Memory Protocol
++
++This project uses hipocampus 3-tier memory. Follow \`skills/hipocampus-core/SKILL.md\`.
++
++### FIRST RESPONSE RULE — MANDATORY
++**On the very first user message of every session**, before doing ANYTHING else:
++Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
++
++### Session Start (run on first user message, every step required.)
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++1. **DO NOT SKIP** Read \`SCRATCHPAD.md\` — current work state
++2. **DO NOT SKIP** Read \`WORKING.md\` — active tasks
++3. **DO NOT SKIP** Read \`TASK-QUEUE.md\` — pending items
++4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance:** Read \`skills/hipocampus-compaction/SKILL.md\` and follow its compaction chain (Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first.
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++
++Note: MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are loaded from project files.
++
++### End-of-Task Checkpoint (mandatory)
++After completing any task, append a structured log to \`memory/YYYY-MM-DD.md\`.
++Compose the log with ## headings per topic: what was requested, analysis, decisions with rationale, outcomes, files changed.
++**The daily log is the source of truth.** Everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
++
++### Rules
++- **Never skip Session Start** — every session begins with it, no exceptions
++- **Never skip checkpoints** — every task completion MUST append to daily log
++- MEMORY.md Core section: never modify or delete
++- memory/*.md (raw): permanent, never delete
++- Search: see \`skills/hipocampus-search/SKILL.md\`
++- If this session ends NOW, the next session must be able to continue immediately
++`;
+ 
+-  // OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.)
+-  // ROOT.md can't be added to the bootstrap list, so we embed it as a section in MEMORY.md.
+-  // The agent reads MEMORY.md at session start (it's always bootstrapped), and the
+-  // Compaction Root section gives it the same awareness as a standalone ROOT.md.
++// Helper: inject Compaction Root section into MEMORY.md for platforms that can't auto-load ROOT.md
++function injectCompactionRoot() {
+   const memoryMd = join(CWD, "MEMORY.md");
+   if (existsSync(memoryMd)) {
+     const memContent = readFileSync(memoryMd, "utf8");
+@@ -390,6 +462,47 @@ if (isOpenClaw) {
+       console.log("  + added Compaction Root section to MEMORY.md");
+     }
+   }
++}
++
++// Helper: inject protocol into an AGENTS.md file (used by OpenClaw and Codex)
++function injectAgentsMdProtocol(protocolBlock) {
++  if (existsSync(agentsMd)) {
++    const content = readFileSync(agentsMd, "utf8");
++    if (!hasHipocampus(content)) {
++      const newContent = protocolBlock.trimStart() + "\n" + content;
++      writeFileSync(agentsMd, newContent);
++      console.log("  + added hipocampus protocol (top) to AGENTS.md");
++    }
++  } else {
++    writeFileSync(agentsMd, protocolBlock.trimStart());
++    console.log("  + created AGENTS.md with hipocampus protocol");
++  }
++}
++
++if (isOpenClaw) {
++  // ── OpenClaw path ──
++  injectAgentsMdProtocol(PROTOCOL_BLOCK_OC);
++  injectCompactionRoot();
++} else if (isCodex) {
++  // ── Codex path ──
++  // Codex uses AGENTS.md like OpenClaw, but with its own protocol block
++  injectAgentsMdProtocol(PROTOCOL_BLOCK_CODEX);
++  injectCompactionRoot();
++} else if (isGemini) {
++  // ── Gemini CLI path ──
++  // Protocol block goes at the TOP of GEMINI.md
++  if (existsSync(geminiMd)) {
++    const content = readFileSync(geminiMd, "utf8");
++    if (!hasHipocampus(content)) {
++      const newContent = PROTOCOL_BLOCK_GEMINI.trimStart() + "\n" + content;
++      writeFileSync(geminiMd, newContent);
++      console.log("  + added hipocampus protocol (top) to GEMINI.md");
++    }
++  } else {
++    writeFileSync(geminiMd, PROTOCOL_BLOCK_GEMINI.trimStart());
++    console.log("  + created GEMINI.md with hipocampus protocol");
++  }
++  injectCompactionRoot();
+ } else {
+   // ── Claude Code path ──
+   // Protocol block goes at the TOP of CLAUDE.md (highest priority)
+@@ -417,30 +530,9 @@ if (isOpenClaw) {
+     console.log("  + created CLAUDE.md with hipocampus protocol and @imports");
+   }
+ 
+-  // In shared memory mode, also inject Compaction Root into MEMORY.md (same as OpenClaw)
+-  // so the ROOT.md index is visible when OpenClaw reads MEMORY.md
++  // In shared memory mode, also inject Compaction Root into MEMORY.md
+   if (sharedMemory) {
+-    const memoryMd = join(CWD, "MEMORY.md");
+-    if (existsSync(memoryMd)) {
+-      const memContent = readFileSync(memoryMd, "utf8");
+-      if (!memContent.includes("Compaction Root")) {
+-        appendFileSync(memoryMd, `
+-## Compaction Root
+-<!-- This section serves as the ROOT.md index for platforms that can't auto-load separate files. -->
+-<!-- Updated automatically by hipocampus compact. See memory/ROOT.md for the full version. -->
+-
+-### Active Context (recent ~7 days)
+-<!-- Current work and priorities -->
+-
+-### Recent Patterns
+-<!-- Cross-cutting insights -->
+-
+-### Topics Index
+-<!-- topic: keywords, references -->
+-`);
+-        console.log("  + added Compaction Root section to MEMORY.md");
+-      }
+-    }
++    injectCompactionRoot();
+   }
+ }
+ 
+@@ -480,7 +572,7 @@ if (existsSync(gitignorePath)) {
+ const hipocampusBin = join(ROOT, "cli", "init.mjs");
+ const compactCmd = `node "${hipocampusBin}" compact --stdin`;
+ 
+-if (!isOpenClaw) {
++if (platform === "claude-code") {
+   // Claude Code: register PreCompact command hook in .claude/settings.json
+   const settingsDir = join(CWD, ".claude");
+   const settingsPath = join(settingsDir, "settings.json");
+@@ -526,7 +618,7 @@ if (!isOpenClaw) {
+     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
+     console.log("  + registered PreCompact + TaskCompleted hooks (mechanical compaction)");
+   }
+-} else {
++} else if (isOpenClaw) {
+   // OpenClaw: compaction is handled by two mechanisms:
+   //   1. HEARTBEAT.md — LLM pass: needs-summarization processing + qmd reindex (every heartbeat)
+   //   2. hipocampus compact — mechanical compaction: called manually or by session:compact:before hook
+@@ -550,11 +642,14 @@ if (!isOpenClaw) {
+     } catch { /* openclaw.json not parseable */ }
+   }
+   console.log("  + HEARTBEAT.md includes hipocampus compaction maintenance tasks");
++} else {
++  // Codex / Gemini: no native hook system — compaction runs via session start protocol
++  console.log(`  ~ ${platform} has no native hook system — compaction runs at session start and via manual 'hipocampus compact'`);
+ }
+ 
+ // ─── Done ───
+ 
+-if (isOpenClaw) {
++if (isOpenClaw || isCodex || isGemini) {
+   console.log(`
+   done! Your agent now has structured memory.
+ 
+diff --git a/package.json b/package.json
+index 744b9e7..1f9a075 100644
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,10 @@
+     "claude-code",
+     "anthropic",
+     "openclaw",
++    "codex",
++    "openai",
++    "gemini",
++    "gemini-cli",
+     "mcp",
+     "ai-tools",
+     "session-memory",
+diff --git a/skills/hipocampus-core-codex/SKILL.md b/skills/hipocampus-core-codex/SKILL.md
+new file mode 100644
+index 0000000..8b908c5
+--- /dev/null
++++ b/skills/hipocampus-core-codex/SKILL.md
+@@ -0,0 +1,97 @@
++---
++name: hipocampus-core
++description: "3-tier agent memory system with 5-level compaction tree. Codex version. Defines session start protocol, end-of-task checkpoints, and memory file management. MUST be followed every session."
++---
++
++# Hipocampus — Agent Memory Protocol (Codex)
++
++## Memory Architecture
++
++```
++Layer 1 (System Prompt — read at session start):
++  MEMORY.md        ~50 lines   long-term memory (Core=frozen, Adaptive=compactable)
++  USER.md          ~50 lines   user profile and preferences
++  SCRATCHPAD.md    ~150 lines  active working state
++  WORKING.md       ~100 lines  current tasks
++  TASK-QUEUE.md    ~50 lines   task backlog
++  memory/ROOT.md   ~100 lines  topic index of all memory (~3K tokens, via Compaction Root in MEMORY.md)
++
++Layer 2 (On-Demand — read when needed):
++  memory/YYYY-MM-DD.md         raw daily logs (permanent, never deleted)
++  knowledge/*.md               detailed knowledge (searchable via qmd)
++  plans/*.md                   task plans
++
++Layer 3 (Search — via qmd + compaction tree):
++  memory/daily/YYYY-MM-DD.md   daily compaction nodes
++  memory/weekly/YYYY-WNN.md    weekly compaction nodes
++  memory/monthly/YYYY-MM.md    monthly compaction nodes
++  Tree traversal: ROOT → monthly → weekly → daily → raw
++```
++
++## Session Start (MANDATORY — run on first user message)
++
++**FIRST RESPONSE RULE:** On the very first user message of every session, before doing ANYTHING else:
++Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
++
++MEMORY.md and USER.md are loaded by the platform via AGENTS.md. memory/ROOT.md is available via the Compaction Root section in MEMORY.md.
++
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++1. **DO NOT SKIP** Read `SCRATCHPAD.md` — current work state
++2. **DO NOT SKIP** Read `WORKING.md` — active tasks
++3. **DO NOT SKIP** Read `TASK-QUEUE.md` — pending items
++4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance:**
++   Read `skills/hipocampus-compaction/SKILL.md` and follow its compaction chain (Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
++   Always run — do not check first.
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++
++## End-of-Task Checkpoint (MANDATORY)
++
++After completing any task, append a structured log to `memory/YYYY-MM-DD.md`.
++
++Format:
++
++> ## [Topic Name]
++> - request: [what the user asked]
++> - analysis: [what you researched/analyzed]
++> - decisions: [choices made with rationale]
++> - outcome: [what was done, files changed]
++> - references: [knowledge/ files, external sources]
++
++**The daily log is the source of truth** — everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
++
++**Priority if timeout imminent** — write directly to `memory/YYYY-MM-DD.md`
++
++## Proactive Session Dump
++
++**Do not wait for task completion to write to the daily log.** Proactively append to `memory/YYYY-MM-DD.md` when:
++- The conversation has been going for ~20+ messages without a checkpoint
++- You sense the context is getting large
++- A significant decision or analysis was just completed, even if the overall task isn't done
++- You're switching between topics within the same task
++
++This protects against context compression — if the platform compresses your conversation history, undumped details are lost forever. Write early, write often. The daily log is append-only, so multiple dumps in the same session are fine.
++
++## File Size Targets
++
++| File | Target | When Exceeded |
++|------|--------|---------------|
++| MEMORY.md Core | ~50 lines | Never touch — frozen |
++| MEMORY.md Adaptive | ~50 lines | Prune oldest entries |
++| ROOT.md | ~100 lines (~3K tokens) | Automatic recursive self-compression |
++| SCRATCHPAD | ~150 lines | Remove completed items |
++| WORKING | ~100 lines | Remove completed tasks |
++| TASK-QUEUE | ~50 lines | Archive completed items |
++
++## Rules
++
++- MEMORY.md Core section: **FROZEN**. Never compact, modify, or remove.
++- MEMORY.md Adaptive section: append-only within session, compactable across sessions.
++- Raw daily logs (`memory/YYYY-MM-DD.md`): **permanent**. Never delete or edit after session.
++- ROOT.md: managed by compaction process. Do not manually edit.
++- If this session ends NOW, the next session must be able to continue immediately.
++- Don't skip checkpoints — lost context means you forget.
++
++## Edge Cases
++
++- **Midnight-spanning session:** Use the session start date for the raw log file name. Do not split across dates.
++- **Returning after long absence:** "Most recent daily" means the latest file that exists, whether it's from yesterday or last week.
+diff --git a/skills/hipocampus-core-gemini/SKILL.md b/skills/hipocampus-core-gemini/SKILL.md
+new file mode 100644
+index 0000000..8caefb1
+--- /dev/null
++++ b/skills/hipocampus-core-gemini/SKILL.md
+@@ -0,0 +1,97 @@
++---
++name: hipocampus-core
++description: "3-tier agent memory system with 5-level compaction tree. Gemini CLI version. Defines session start protocol, end-of-task checkpoints, and memory file management. MUST be followed every session."
++---
++
++# Hipocampus — Agent Memory Protocol (Gemini CLI)
++
++## Memory Architecture
++
++```
++Layer 1 (System Prompt — read at session start):
++  MEMORY.md        ~50 lines   long-term memory (Core=frozen, Adaptive=compactable)
++  USER.md          ~50 lines   user profile and preferences
++  SCRATCHPAD.md    ~150 lines  active working state
++  WORKING.md       ~100 lines  current tasks
++  TASK-QUEUE.md    ~50 lines   task backlog
++  memory/ROOT.md   ~100 lines  topic index of all memory (~3K tokens, via Compaction Root in MEMORY.md)
++
++Layer 2 (On-Demand — read when needed):
++  memory/YYYY-MM-DD.md         raw daily logs (permanent, never deleted)
++  knowledge/*.md               detailed knowledge (searchable via qmd)
++  plans/*.md                   task plans
++
++Layer 3 (Search — via qmd + compaction tree):
++  memory/daily/YYYY-MM-DD.md   daily compaction nodes
++  memory/weekly/YYYY-WNN.md    weekly compaction nodes
++  memory/monthly/YYYY-MM.md    monthly compaction nodes
++  Tree traversal: ROOT → monthly → weekly → daily → raw
++```
++
++## Session Start (MANDATORY — run on first user message)
++
++**FIRST RESPONSE RULE:** On the very first user message of every session, before doing ANYTHING else:
++Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
++
++MEMORY.md and USER.md are loaded by the platform via GEMINI.md. memory/ROOT.md is available via the Compaction Root section in MEMORY.md.
++
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++1. **DO NOT SKIP** Read `SCRATCHPAD.md` — current work state
++2. **DO NOT SKIP** Read `WORKING.md` — active tasks
++3. **DO NOT SKIP** Read `TASK-QUEUE.md` — pending items
++4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance:**
++   Read `skills/hipocampus-compaction/SKILL.md` and follow its compaction chain (Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
++   Always run — do not check first.
++**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
++
++## End-of-Task Checkpoint (MANDATORY)
++
++After completing any task, append a structured log to `memory/YYYY-MM-DD.md`.
++
++Format:
++
++> ## [Topic Name]
++> - request: [what the user asked]
++> - analysis: [what you researched/analyzed]
++> - decisions: [choices made with rationale]
++> - outcome: [what was done, files changed]
++> - references: [knowledge/ files, external sources]
++
++**The daily log is the source of truth** — everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
++
++**Priority if timeout imminent** — write directly to `memory/YYYY-MM-DD.md`
++
++## Proactive Session Dump
++
++**Do not wait for task completion to write to the daily log.** Proactively append to `memory/YYYY-MM-DD.md` when:
++- The conversation has been going for ~20+ messages without a checkpoint
++- You sense the context is getting large
++- A significant decision or analysis was just completed, even if the overall task isn't done
++- You're switching between topics within the same task
++
++This protects against context compression — if the platform compresses your conversation history, undumped details are lost forever. Write early, write often. The daily log is append-only, so multiple dumps in the same session are fine.
++
++## File Size Targets
++
++| File | Target | When Exceeded |
++|------|--------|---------------|
++| MEMORY.md Core | ~50 lines | Never touch — frozen |
++| MEMORY.md Adaptive | ~50 lines | Prune oldest entries |
++| ROOT.md | ~100 lines (~3K tokens) | Automatic recursive self-compression |
++| SCRATCHPAD | ~150 lines | Remove completed items |
++| WORKING | ~100 lines | Remove completed tasks |
++| TASK-QUEUE | ~50 lines | Archive completed items |
++
++## Rules
++
++- MEMORY.md Core section: **FROZEN**. Never compact, modify, or remove.
++- MEMORY.md Adaptive section: append-only within session, compactable across sessions.
++- Raw daily logs (`memory/YYYY-MM-DD.md`): **permanent**. Never delete or edit after session.
++- ROOT.md: managed by compaction process. Do not manually edit.
++- If this session ends NOW, the next session must be able to continue immediately.
++- Don't skip checkpoints — lost context means you forget.
++
++## Edge Cases
++
++- **Midnight-spanning session:** Use the session start date for the raw log file name. Do not split across dates.
++- **Returning after long absence:** "Most recent daily" means the latest file that exists, whether it's from yesterday or last week.
+-- 
+2.43.0
+
