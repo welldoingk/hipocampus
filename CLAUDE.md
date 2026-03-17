@@ -25,6 +25,8 @@ cli/                          # CLI entry points
 skills/                       # Agent skill definitions (SKILL.md files)
   hipocampus-core-cc/         # Session protocol for Claude Code
   hipocampus-core-oc/         # Session protocol for OpenClaw
+  hipocampus-core-codex/      # Session protocol for Codex
+  hipocampus-core-gemini/     # Session protocol for Gemini CLI
   hipocampus-core-shared/     # Shared memory mode (cross-platform)
   hipocampus-compaction/      # 5-level compaction tree builder
   hipocampus-search/          # Search guide (ROOT.md judgment, qmd, tree traversal)
@@ -51,6 +53,8 @@ npx hipocampus init --no-search        # Skip qmd entirely
 npx hipocampus init --shared-memory    # Cross-platform file-based memory
 npx hipocampus init --platform claude-code
 npx hipocampus init --platform openclaw
+npx hipocampus init --platform codex
+npx hipocampus init --platform gemini
 
 # Run mechanical compaction manually
 npx hipocampus compact
@@ -116,12 +120,14 @@ All memory writes dispatch to subagents to keep the main session context clean.
 
 ## Platform Support
 
-The project targets two platforms:
+The project targets four platforms:
 
 - **Claude Code** — Skills install to `.claude/skills/`, hooks registered in `.claude/settings.json`, memory loaded via auto-memory
 - **OpenClaw** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, hooks via AGENTS.md
+- **Codex** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, protocol injected into AGENTS.md
+- **Gemini CLI** — Skills install to `skills/`, uses file-based MEMORY.md + USER.md, protocol injected into GEMINI.md
 
-Platform is auto-detected during `init` (presence of `AGENTS.md` → OpenClaw, otherwise → Claude Code).
+Platform is auto-detected during `init` (`openclaw.json` → OpenClaw, `GEMINI.md` → Gemini, `AGENTS.md` → OpenClaw, otherwise → Claude Code). Use `--platform codex` to explicitly select Codex.
 
 ## Configuration
 

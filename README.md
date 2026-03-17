@@ -2,7 +2,7 @@
 
 Drop-in memory harness for AI agents. Zero infrastructure — just files.
 
-3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code) and [OpenClaw](https://github.com/openclaw) bots.
+3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code), [OpenClaw](https://github.com/openclaw), [Codex](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
 
 ## Quick Start
 
@@ -13,8 +13,8 @@ npx hipocampus init
 This creates the full memory structure in your project:
 
 ```
-MEMORY.md              # Long-term memory (OpenClaw only — Claude Code uses platform auto memory)
-USER.md                # User profile (OpenClaw only — Claude Code uses platform auto memory)
+MEMORY.md              # Long-term memory (OpenClaw/Codex/Gemini — Claude Code uses platform auto memory)
+USER.md                # User profile (OpenClaw/Codex/Gemini — Claude Code uses platform auto memory)
 SCRATCHPAD.md          # Active working state
 WORKING.md             # Current tasks in progress
 TASK-QUEUE.md          # Task backlog (queued items only)
@@ -27,7 +27,7 @@ hipocampus.config.json     # Configuration
 
 It also:
 - Installs [qmd](https://github.com/tobi/qmd) for hybrid search (skip with `--no-search`)
-- Injects the memory protocol into CLAUDE.md (Claude Code) or AGENTS.md (OpenClaw)
+- Injects the memory protocol into CLAUDE.md (Claude Code), AGENTS.md (OpenClaw/Codex), or GEMINI.md (Gemini CLI)
 - Registers a pre-compaction hook for automatic memory preservation
 - Auto-loads ROOT.md into the agent's system prompt
 - Adds memory files to `.gitignore`
@@ -44,11 +44,13 @@ npx hipocampus init --no-search
 # Override platform detection (auto-detects by default)
 npx hipocampus init --platform claude-code
 npx hipocampus init --platform openclaw
+npx hipocampus init --platform codex
+npx hipocampus init --platform gemini
 ```
 
 ## What You Get
 
-Install hipocampus on a Claude Code or OpenClaw project, and your agent gains **persistent memory across sessions**. It remembers what you worked on, what decisions were made, what lessons were learned — and it knows what it knows without loading everything into context.
+Install hipocampus on a Claude Code, OpenClaw, Codex, or Gemini CLI project, and your agent gains **persistent memory across sessions**. It remembers what you worked on, what decisions were made, what lessons were learned — and it knows what it knows without loading everything into context.
 
 The effect is similar to injecting your entire conversation history into every API call, but at a fraction of the token cost (~3K tokens instead of 100K+).
 
@@ -104,8 +106,8 @@ Injected into every API call. The agent's "working memory" — what it needs to 
 | **WORKING.md** | Tasks in progress — status, blockers, next steps | Without this, the agent doesn't know what tasks are active |
 | **TASK-QUEUE.md** | Backlog of pending tasks | Without this, follow-up tasks from prior sessions are lost |
 | **memory/ROOT.md** | Compaction tree root — compressed index of ALL accumulated history (~100 lines) | **The key innovation.** This is what gives the agent awareness of its entire past at ~3K tokens. Like injecting all history, but 50x cheaper. |
-| **MEMORY.md** | Long-term facts, rules, lessons (OpenClaw only — Claude Code uses platform auto memory) | Core facts that apply to every interaction |
-| **USER.md** | User profile, preferences (OpenClaw only) | Personalization across sessions |
+| **MEMORY.md** | Long-term facts, rules, lessons (OpenClaw/Codex/Gemini — Claude Code uses platform auto memory) | Core facts that apply to every interaction |
+| **USER.md** | User profile, preferences (OpenClaw/Codex/Gemini) | Personalization across sessions |
 
 **ROOT.md deserves special attention.** It's a ~100-line functional index that compresses ALL past conversations and work into four sections:
 
@@ -199,14 +201,14 @@ Hipocampus has four execution mechanisms — all set up automatically by `npx hi
 
 ### 1. Session Protocol (agent-driven)
 
-The hipocampus-core skill instructs the agent what to do at session start and after every task. This is injected into CLAUDE.md (Claude Code) or AGENTS.md (OpenClaw) during init, so the agent follows it automatically.
+The hipocampus-core skill instructs the agent what to do at session start and after every task. This is injected into CLAUDE.md (Claude Code), AGENTS.md (OpenClaw/Codex), or GEMINI.md (Gemini CLI) during init, so the agent follows it automatically.
 
 **Session Start (FIRST RESPONSE RULE — runs before anything else on first user message):**
 
 ```
 1. Read hipocampus.config.json → determine platform
-2. OpenClaw only: Read MEMORY.md (long-term memory)
-3. OpenClaw only: Read USER.md (user profile)
+2. OpenClaw/Codex/Gemini: Read MEMORY.md (long-term memory)
+3. OpenClaw/Codex/Gemini: Read USER.md (user profile)
 4. Claude Code legacy: Read MEMORY.md if it exists (migration support)
 5. Read SCRATCHPAD.md — current work state
 6. Read WORKING.md — active tasks
@@ -224,9 +226,9 @@ After completing any task, the agent composes a task summary and dispatches a su
 
 ```
 1. Update SCRATCHPAD — findings, decisions, lessons
-2. OpenClaw: Append to MEMORY.md — APPEND ONLY, never modify Core section
+2. OpenClaw/Codex/Gemini: Append to MEMORY.md — APPEND ONLY, never modify Core section
    Claude Code: Save facts/lessons to platform memory (auto memory handles this natively)
-3. OpenClaw only: Update USER.md — newly learned user info
+3. OpenClaw/Codex/Gemini: Update USER.md — newly learned user info
 4. Append structured log to memory/YYYY-MM-DD.md (see below)
 5. Update WORKING — remove completed tasks
 6. Update TASK-QUEUE — remove completed tasks, add follow-ups
@@ -323,8 +325,10 @@ ROOT.md must be in the agent's context at every session start. Each platform has
 |----------|-----------|-------------------|
 | Claude Code | `@memory/ROOT.md` import in CLAUDE.md | Automatic |
 | OpenClaw | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
+| Codex | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
+| Gemini CLI | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
 
-OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.) — ROOT.md can't be added to that list. Instead, hipocampus embeds the ROOT content as a section inside MEMORY.md, which is always bootstrapped. The `hipocampus compact` command keeps this section in sync with `memory/ROOT.md`.
+OpenClaw, Codex, and Gemini CLI bootstrap a fixed set of files — ROOT.md can't be added to their bootstrap lists. Instead, hipocampus embeds the ROOT content as a section inside MEMORY.md, which is always loaded. The `hipocampus compact` command keeps this section in sync with `memory/ROOT.md`.
 
 ### Execution Summary
 
@@ -346,8 +350,8 @@ Everything is set up by `npx hipocampus init`. The user never has to think about
 
 ```
 project/
-├── MEMORY.md                        (OpenClaw only)
-├── USER.md                          (OpenClaw only)
+├── MEMORY.md                        (OpenClaw/Codex/Gemini)
+├── USER.md                          (OpenClaw/Codex/Gemini)
 ├── SCRATCHPAD.md
 ├── WORKING.md
 ├── TASK-QUEUE.md
@@ -388,7 +392,7 @@ project/
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `platform` | string | auto-detected | `"claude-code"` or `"openclaw"` — determines memory file behavior |
+| `platform` | string | auto-detected | `"claude-code"`, `"openclaw"`, `"codex"`, or `"gemini"` — determines memory file behavior |
 | `search.vector` | boolean | `true` | Enable vector embeddings (~2GB disk) |
 | `search.embedModel` | string | `"auto"` | `"auto"` for embeddinggemma-300M, `"qwen3"` for CJK-optimized |
 | `compaction.rootMaxTokens` | number | `3000` | Max token budget for ROOT.md (~100 lines) |

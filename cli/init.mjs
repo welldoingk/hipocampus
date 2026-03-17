@@ -25,7 +25,7 @@ if (!command || command === "--help" || command === "-h") {
   Options:
     --no-vector        Disable vector search (saves ~2GB disk, no embedding models)
     --no-search        Skip qmd installation and search setup (compaction tree still works)
-    --platform <name>  Override platform detection (claude-code or openclaw)
+    --platform <name>  Override platform detection (claude-code, openclaw, codex, or gemini)
     --help, -h         Show this help
 `);
   process.exit(0);
@@ -48,8 +48,8 @@ const noSearch = args.includes("--no-search");
 const sharedMemory = args.includes("--shared-memory");
 const platformIdx = args.indexOf("--platform");
 const platformOverride = platformIdx !== -1 ? args[platformIdx + 1] : null;
-if (platformOverride && !["claude-code", "openclaw"].includes(platformOverride)) {
-  console.error(`  ! Unknown platform: ${platformOverride}. Use "claude-code" or "openclaw".`);
+if (platformOverride && !["claude-code", "openclaw", "codex", "gemini"].includes(platformOverride)) {
+  console.error(`  ! Unknown platform: ${platformOverride}. Use "claude-code", "openclaw", "codex", or "gemini".`);
   process.exit(1);
 }
 
@@ -92,12 +92,28 @@ for (const dir of dirs) {
 
 const agentsMd = join(CWD, "AGENTS.md");
 const claudeMd = join(CWD, "CLAUDE.md");
+const geminiMd = join(CWD, "GEMINI.md");
 const openclawJson = join(CWD, "openclaw.json");
 
-const isOpenClaw = platformOverride
-  ? platformOverride === "openclaw"
-  : existsSync(agentsMd);
-const platform = isOpenClaw ? "openclaw" : "claude-code";
+let platform;
+if (platformOverride) {
+  platform = platformOverride;
+} else if (existsSync(openclawJson)) {
+  platform = "openclaw";
+} else if (existsSync(geminiMd)) {
+  platform = "gemini";
+} else if (existsSync(agentsMd)) {
+  // AGENTS.md is used by both OpenClaw and Codex.
+  // With openclaw.json absent, default to openclaw for backward compatibility.
+  // Use --platform codex to override.
+  platform = "openclaw";
+} else {
+  platform = "claude-code";
+}
+const isOpenClaw = platform === "openclaw";
+const isCodex = platform === "codex";
+const isGemini = platform === "gemini";
+const isAgentsMdPlatform = isOpenClaw || isCodex; // platforms that use AGENTS.md
 
 console.log(`  ~ platform: ${platform}`);
 if (sharedMemory) console.log(`  ~ shared memory mode: MEMORY.md + USER.md shared across platforms`);
@@ -112,7 +128,7 @@ function copyTemplate(filename, destName) {
   }
 }
 
-if (isOpenClaw || sharedMemory) {
+if (isOpenClaw || isCodex || isGemini || sharedMemory) {
   copyTemplate("MEMORY.md");
   copyTemplate("USER.md");
 }
@@ -155,6 +171,10 @@ copyTemplate("WORKING.md");
 let coreSkillSrc;
 if (sharedMemory) {
   coreSkillSrc = "hipocampus-core-shared";
+} else if (isCodex) {
+  coreSkillSrc = "hipocampus-core-codex";
+} else if (isGemini) {
+  coreSkillSrc = "hipocampus-core-gemini";
 } else {
   coreSkillSrc = isOpenClaw ? "hipocampus-core-oc" : "hipocampus-core-cc";
 }
@@ -163,8 +183,8 @@ const allSkillSources = [coreSkillSrc, ...sharedSkills];
 // Installed as hipocampus-core (not hipocampus-core-cc/oc)
 const allSkillDests = ["hipocampus-core", ...sharedSkills];
 
-// Claude Code: .claude/skills/  |  OpenClaw: skills/
-const skillsBase = isOpenClaw ? join(CWD, "skills") : join(CWD, ".claude", "skills");
+// Claude Code: .claude/skills/  |  OpenClaw/Codex/Gemini: skills/
+const skillsBase = (isOpenClaw || isCodex || isGemini) ? join(CWD, "skills") : join(CWD, ".claude", "skills");
 
 for (let i = 0; i < allSkillSources.length; i++) {
   const srcName = allSkillSources[i];
@@ -180,8 +200,8 @@ for (let i = 0; i < allSkillSources.length; i++) {
   }
 }
 
-// Migration: remove skills from wrong location (.claude/skills on OpenClaw)
-if (isOpenClaw) {
+// Migration: remove skills from wrong location (.claude/skills on non-Claude Code platforms)
+if (isOpenClaw || isCodex || isGemini) {
   const wrongBase = join(CWD, ".claude", "skills");
   for (const skill of allSkillDests) {
     const wrongDir = join(wrongBase, skill);
@@ -351,24 +371,76 @@ After completing any task, **dispatch a subagent** to:
 - If this session ends NOW, the next session must be able to continue immediately
 `;
 
+// Codex uses AGENTS.md (like OpenClaw) but without subagent support
+const PROTOCOL_BLOCK_CODEX = `
+## Hipocampus — Memory Protocol
 
+This project uses hipocampus 3-tier memory. Follow \`skills/hipocampus-core/SKILL.md\`.
 
-if (isOpenClaw) {
-  // ── OpenClaw path ──
-  if (existsSync(agentsMd)) {
-    const content = readFileSync(agentsMd, "utf8");
-    if (!hasHipocampus(content)) {
-      // Prepend: protocol block at top of AGENTS.md (highest priority)
-      const newContent = PROTOCOL_BLOCK_OC.trimStart() + "\n" + content;
-      writeFileSync(agentsMd, newContent);
-      console.log("  + added hipocampus protocol (top) to AGENTS.md");
-    }
-  }
+### FIRST RESPONSE RULE — MANDATORY
+**On the very first user message of every session**, before doing ANYTHING else:
+Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
 
-  // OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.)
-  // ROOT.md can't be added to the bootstrap list, so we embed it as a section in MEMORY.md.
-  // The agent reads MEMORY.md at session start (it's always bootstrapped), and the
-  // Compaction Root section gives it the same awareness as a standalone ROOT.md.
+### Session Start (run on first user message, every step required.)
+**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
+1. **DO NOT SKIP** Read \`SCRATCHPAD.md\` — current work state
+2. **DO NOT SKIP** Read \`WORKING.md\` — active tasks
+3. **DO NOT SKIP** Read \`TASK-QUEUE.md\` — pending items
+4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance:** Read \`skills/hipocampus-compaction/SKILL.md\` and follow its compaction chain (Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first.
+**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
+
+Note: MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded by the platform.
+
+### End-of-Task Checkpoint (mandatory)
+After completing any task, append a structured log to \`memory/YYYY-MM-DD.md\`.
+Compose the log with ## headings per topic: what was requested, analysis, decisions with rationale, outcomes, files changed.
+**The daily log is the source of truth.** Everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
+
+### Rules
+- **Never skip Session Start** — every session begins with it, no exceptions
+- **Never skip checkpoints** — every task completion MUST append to daily log
+- MEMORY.md Core section: never modify or delete
+- memory/*.md (raw): permanent, never delete
+- Search: see \`skills/hipocampus-search/SKILL.md\`
+- If this session ends NOW, the next session must be able to continue immediately
+`;
+
+// Gemini CLI uses GEMINI.md
+const PROTOCOL_BLOCK_GEMINI = `
+## Hipocampus — Memory Protocol
+
+This project uses hipocampus 3-tier memory. Follow \`skills/hipocampus-core/SKILL.md\`.
+
+### FIRST RESPONSE RULE — MANDATORY
+**On the very first user message of every session**, before doing ANYTHING else:
+Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
+
+### Session Start (run on first user message, every step required.)
+**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
+1. **DO NOT SKIP** Read \`SCRATCHPAD.md\` — current work state
+2. **DO NOT SKIP** Read \`WORKING.md\` — active tasks
+3. **DO NOT SKIP** Read \`TASK-QUEUE.md\` — pending items
+4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance:** Read \`skills/hipocampus-compaction/SKILL.md\` and follow its compaction chain (Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first.
+**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
+
+Note: MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are loaded from project files.
+
+### End-of-Task Checkpoint (mandatory)
+After completing any task, append a structured log to \`memory/YYYY-MM-DD.md\`.
+Compose the log with ## headings per topic: what was requested, analysis, decisions with rationale, outcomes, files changed.
+**The daily log is the source of truth.** Everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
+
+### Rules
+- **Never skip Session Start** — every session begins with it, no exceptions
+- **Never skip checkpoints** — every task completion MUST append to daily log
+- MEMORY.md Core section: never modify or delete
+- memory/*.md (raw): permanent, never delete
+- Search: see \`skills/hipocampus-search/SKILL.md\`
+- If this session ends NOW, the next session must be able to continue immediately
+`;
+
+// Helper: inject Compaction Root section into MEMORY.md for platforms that can't auto-load ROOT.md
+function injectCompactionRoot() {
   const memoryMd = join(CWD, "MEMORY.md");
   if (existsSync(memoryMd)) {
     const memContent = readFileSync(memoryMd, "utf8");
@@ -390,6 +462,47 @@ if (isOpenClaw) {
       console.log("  + added Compaction Root section to MEMORY.md");
     }
   }
+}
+
+// Helper: inject protocol into an AGENTS.md file (used by OpenClaw and Codex)
+function injectAgentsMdProtocol(protocolBlock) {
+  if (existsSync(agentsMd)) {
+    const content = readFileSync(agentsMd, "utf8");
+    if (!hasHipocampus(content)) {
+      const newContent = protocolBlock.trimStart() + "\n" + content;
+      writeFileSync(agentsMd, newContent);
+      console.log("  + added hipocampus protocol (top) to AGENTS.md");
+    }
+  } else {
+    writeFileSync(agentsMd, protocolBlock.trimStart());
+    console.log("  + created AGENTS.md with hipocampus protocol");
+  }
+}
+
+if (isOpenClaw) {
+  // ── OpenClaw path ──
+  injectAgentsMdProtocol(PROTOCOL_BLOCK_OC);
+  injectCompactionRoot();
+} else if (isCodex) {
+  // ── Codex path ──
+  // Codex uses AGENTS.md like OpenClaw, but with its own protocol block
+  injectAgentsMdProtocol(PROTOCOL_BLOCK_CODEX);
+  injectCompactionRoot();
+} else if (isGemini) {
+  // ── Gemini CLI path ──
+  // Protocol block goes at the TOP of GEMINI.md
+  if (existsSync(geminiMd)) {
+    const content = readFileSync(geminiMd, "utf8");
+    if (!hasHipocampus(content)) {
+      const newContent = PROTOCOL_BLOCK_GEMINI.trimStart() + "\n" + content;
+      writeFileSync(geminiMd, newContent);
+      console.log("  + added hipocampus protocol (top) to GEMINI.md");
+    }
+  } else {
+    writeFileSync(geminiMd, PROTOCOL_BLOCK_GEMINI.trimStart());
+    console.log("  + created GEMINI.md with hipocampus protocol");
+  }
+  injectCompactionRoot();
 } else {
   // ── Claude Code path ──
   // Protocol block goes at the TOP of CLAUDE.md (highest priority)
@@ -417,30 +530,9 @@ if (isOpenClaw) {
     console.log("  + created CLAUDE.md with hipocampus protocol and @imports");
   }
 
-  // In shared memory mode, also inject Compaction Root into MEMORY.md (same as OpenClaw)
-  // so the ROOT.md index is visible when OpenClaw reads MEMORY.md
+  // In shared memory mode, also inject Compaction Root into MEMORY.md
   if (sharedMemory) {
-    const memoryMd = join(CWD, "MEMORY.md");
-    if (existsSync(memoryMd)) {
-      const memContent = readFileSync(memoryMd, "utf8");
-      if (!memContent.includes("Compaction Root")) {
-        appendFileSync(memoryMd, `
-## Compaction Root
-<!-- This section serves as the ROOT.md index for platforms that can't auto-load separate files. -->
-<!-- Updated automatically by hipocampus compact. See memory/ROOT.md for the full version. -->
-
-### Active Context (recent ~7 days)
-<!-- Current work and priorities -->
-
-### Recent Patterns
-<!-- Cross-cutting insights -->
-
-### Topics Index
-<!-- topic: keywords, references -->
-`);
-        console.log("  + added Compaction Root section to MEMORY.md");
-      }
-    }
+    injectCompactionRoot();
   }
 }
 
@@ -480,7 +572,7 @@ if (existsSync(gitignorePath)) {
 const hipocampusBin = join(ROOT, "cli", "init.mjs");
 const compactCmd = `node "${hipocampusBin}" compact --stdin`;
 
-if (!isOpenClaw) {
+if (platform === "claude-code") {
   // Claude Code: register PreCompact command hook in .claude/settings.json
   const settingsDir = join(CWD, ".claude");
   const settingsPath = join(settingsDir, "settings.json");
@@ -526,7 +618,7 @@ if (!isOpenClaw) {
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
     console.log("  + registered PreCompact + TaskCompleted hooks (mechanical compaction)");
   }
-} else {
+} else if (isOpenClaw) {
   // OpenClaw: compaction is handled by two mechanisms:
   //   1. HEARTBEAT.md — LLM pass: needs-summarization processing + qmd reindex (every heartbeat)
   //   2. hipocampus compact — mechanical compaction: called manually or by session:compact:before hook
@@ -550,11 +642,14 @@ if (!isOpenClaw) {
     } catch { /* openclaw.json not parseable */ }
   }
   console.log("  + HEARTBEAT.md includes hipocampus compaction maintenance tasks");
+} else {
+  // Codex / Gemini: no native hook system — compaction runs via session start protocol
+  console.log(`  ~ ${platform} has no native hook system — compaction runs at session start and via manual 'hipocampus compact'`);
 }
 
 // ─── Done ───
 
-if (isOpenClaw) {
+if (isOpenClaw || isCodex || isGemini) {
   console.log(`
   done! Your agent now has structured memory.
 
