@@ -45,6 +45,7 @@ if (command !== "init") {
 
 const noVector = args.includes("--no-vector");
 const noSearch = args.includes("--no-search");
+const sharedMemory = args.includes("--shared-memory");
 const platformIdx = args.indexOf("--platform");
 const platformOverride = platformIdx !== -1 ? args[platformIdx + 1] : null;
 if (platformOverride && !["claude-code", "openclaw"].includes(platformOverride)) {
@@ -99,6 +100,7 @@ const isOpenClaw = platformOverride
 const platform = isOpenClaw ? "openclaw" : "claude-code";
 
 console.log(`  ~ platform: ${platform}`);
+if (sharedMemory) console.log(`  ~ shared memory mode: MEMORY.md + USER.md shared across platforms`);
 
 // ─── Step 3: Copy templates ───
 
@@ -110,9 +112,11 @@ function copyTemplate(filename, destName) {
   }
 }
 
-if (isOpenClaw) {
+if (isOpenClaw || sharedMemory) {
   copyTemplate("MEMORY.md");
   copyTemplate("USER.md");
+}
+if (isOpenClaw) {
   copyTemplate("HEARTBEAT.md");
 }
 copyTemplate("TASK-QUEUE.md");
@@ -148,7 +152,12 @@ copyTemplate("WORKING.md");
 // ─── Step 4: Install skills ───
 
 // Platform-specific core skill + shared skills
-const coreSkillSrc = isOpenClaw ? "hipocampus-core-oc" : "hipocampus-core-cc";
+let coreSkillSrc;
+if (sharedMemory) {
+  coreSkillSrc = "hipocampus-core-shared";
+} else {
+  coreSkillSrc = isOpenClaw ? "hipocampus-core-oc" : "hipocampus-core-cc";
+}
 const sharedSkills = ["hipocampus-compaction", "hipocampus-search", "hipocampus-flush"];
 const allSkillSources = [coreSkillSrc, ...sharedSkills];
 // Installed as hipocampus-core (not hipocampus-core-cc/oc)
@@ -190,6 +199,7 @@ const configDest = join(CWD, "hipocampus.config.json");
 if (!existsSync(configDest)) {
   const config = {
     platform,
+    sharedMemory: sharedMemory || false,
     search: {
       vector: !noVector,
       embedModel: "auto",
@@ -306,6 +316,43 @@ Compose the log with ## headings per topic: what was requested, analysis, decisi
 
 const hasHipocampus = (text) => text.toLowerCase().includes("hipocampus");
 
+const PROTOCOL_BLOCK_CC_SHARED = `
+## Hipocampus — Memory Protocol (Shared Memory Mode)
+
+This project uses hipocampus 3-tier memory in **shared memory mode** — \`MEMORY.md\` and \`USER.md\` are files shared between Claude Code and OpenClaw sessions.
+Follow \`.claude/skills/hipocampus-core/SKILL.md\`.
+**All memory write operations MUST be dispatched to subagents** to keep the main session context clean.
+
+### FIRST RESPONSE RULE — MANDATORY
+**On the very first user message of every session**, before doing ANYTHING else:
+Run the Session Start protocol below FIRST. This takes priority over ANY user request.
+
+### Session Start (run on first user message.)
+MEMORY.md, USER.md, SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md are auto-loaded via @import below — no manual read needed.
+**This procedure must be completed before responding to the user NO MATTER WHAT**
+1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (subagent):** Dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first, the subagent handles it.
+**This procedure must be completed before responding to the user NO MATTER WHAT**
+
+### End-of-Task Checkpoint (mandatory — subagent)
+After completing any task, **dispatch a subagent** to:
+1. Append structured log to \`memory/YYYY-MM-DD.md\` (## headings: request, analysis, decisions, outcome, references)
+2. **APPEND** new facts/lessons to \`MEMORY.md\` Adaptive section — NEVER overwrite
+3. Update \`USER.md\` if new user preferences were learned
+**You must provide the task summary + new facts to the subagent** — it has no access to the conversation.
+
+### Rules
+- **Never skip Session Start** — every session begins with it, no exceptions
+- **Never skip checkpoints** — every task completion MUST write to daily log + MEMORY.md via subagent
+- **All memory writes via subagent** — never pollute main session with memory operations
+- **MEMORY.md is shared** — OpenClaw sessions also write it. Always APPEND to Adaptive section, never overwrite
+- MEMORY.md Core section: never modify or delete
+- memory/*.md (raw): permanent, never delete
+- Search: see \`.claude/skills/hipocampus-search/SKILL.md\`
+- If this session ends NOW, the next session must be able to continue immediately
+`;
+
+
+
 if (isOpenClaw) {
   // ── OpenClaw path ──
   if (existsSync(agentsMd)) {
@@ -346,28 +393,54 @@ if (isOpenClaw) {
 } else {
   // ── Claude Code path ──
   // Protocol block goes at the TOP of CLAUDE.md (highest priority)
-  // @memory/ROOT.md import goes after protocol block but before existing content
+  // @imports go after protocol block but before existing content
+
+  const chosenProtocol = sharedMemory ? PROTOCOL_BLOCK_CC_SHARED : PROTOCOL_BLOCK_CC;
 
   // @imports: platform auto-loads these at session start (no agent read needed)
-  const importBlock = [
-    "@memory/ROOT.md",
-    "@SCRATCHPAD.md",
-    "@WORKING.md",
-    "@TASK-QUEUE.md",
-  ].join("\n") + "\n";
+  const importLines = ["@memory/ROOT.md", "@SCRATCHPAD.md", "@WORKING.md", "@TASK-QUEUE.md"];
+  if (sharedMemory) {
+    // In shared memory mode, MEMORY.md and USER.md are also file-based → @import them
+    importLines.unshift("@MEMORY.md", "@USER.md");
+  }
+  const importBlock = importLines.join("\n") + "\n";
 
   if (existsSync(claudeMd)) {
     const content = readFileSync(claudeMd, "utf8");
     if (!hasHipocampus(content)) {
-      // Prepend: protocol block + @imports + existing content
-      const newContent = PROTOCOL_BLOCK_CC.trimStart() + "\n" + importBlock + "\n" + content;
+      const newContent = chosenProtocol.trimStart() + "\n" + importBlock + "\n" + content;
       writeFileSync(claudeMd, newContent);
       console.log("  + added hipocampus protocol (top) and @imports to CLAUDE.md");
     }
   } else {
-    // Create new CLAUDE.md: protocol block first, then @imports
-    writeFileSync(claudeMd, PROTOCOL_BLOCK_CC.trimStart() + "\n" + importBlock);
+    writeFileSync(claudeMd, chosenProtocol.trimStart() + "\n" + importBlock);
     console.log("  + created CLAUDE.md with hipocampus protocol and @imports");
+  }
+
+  // In shared memory mode, also inject Compaction Root into MEMORY.md (same as OpenClaw)
+  // so the ROOT.md index is visible when OpenClaw reads MEMORY.md
+  if (sharedMemory) {
+    const memoryMd = join(CWD, "MEMORY.md");
+    if (existsSync(memoryMd)) {
+      const memContent = readFileSync(memoryMd, "utf8");
+      if (!memContent.includes("Compaction Root")) {
+        appendFileSync(memoryMd, `
+## Compaction Root
+<!-- This section serves as the ROOT.md index for platforms that can't auto-load separate files. -->
+<!-- Updated automatically by hipocampus compact. See memory/ROOT.md for the full version. -->
+
+### Active Context (recent ~7 days)
+<!-- Current work and priorities -->
+
+### Recent Patterns
+<!-- Cross-cutting insights -->
+
+### Topics Index
+<!-- topic: keywords, references -->
+`);
+        console.log("  + added Compaction Root section to MEMORY.md");
+      }
+    }
   }
 }
 
