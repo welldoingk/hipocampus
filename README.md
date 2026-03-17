@@ -1,5 +1,7 @@
 # hipocampus
 
+[한국어](./README.ko.md)
+
 Drop-in memory harness for AI agents. Zero infrastructure — just files.
 
 3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code), [OpenClaw](https://github.com/openclaw), [Codex](https://github.com/openai/codex), and [Gemini CLI](https://github.com/google-gemini/gemini-cli).
