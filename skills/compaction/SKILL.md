@@ -41,7 +41,7 @@ period: 2026-W11
 
 ## When to Run
 
-Called from hipocampus-core Session Start step 7, or directly by an external scheduler (e.g., OpenClaw heartbeat). Check trigger conditions below.
+Called from hipocampus:core Session Start step 7, or directly by an external scheduler (e.g., OpenClaw heartbeat). Check trigger conditions below.
 
 ## Trigger Conditions
 

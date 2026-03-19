@@ -1,20 +1,20 @@
 ---
 name: hipocampus-core
-description: "3-tier agent memory system with 5-level compaction tree. OpenClaw version. Defines session start protocol, end-of-task checkpoints, and memory file management. MUST be followed every session."
+description: "3-tier agent memory system with 5-level compaction tree. Claude Code version. Defines session start protocol, end-of-task checkpoints, and memory file management. MUST be followed every session."
 ---
 
-# Hipocampus — Agent Memory Protocol (OpenClaw)
+# Hipocampus — Agent Memory Protocol (Claude Code)
 
 ## Memory Architecture
 
 ```
-Layer 1 (System Prompt — read at session start):
-  MEMORY.md        ~50 lines   long-term memory (Core=frozen, Adaptive=compactable)
-  USER.md          ~50 lines   user profile and preferences
+Layer 1 (System Prompt — auto-loaded via @import):
   SCRATCHPAD.md    ~150 lines  active working state
   WORKING.md       ~100 lines  current tasks
   TASK-QUEUE.md    ~50 lines   task backlog
-  memory/ROOT.md   ~100 lines  topic index of all memory (~3K tokens, via Compaction Root in MEMORY.md)
+  memory/ROOT.md   ~100 lines  topic index of all memory (~3K tokens)
+
+  Long-term memory and user profile are managed by Claude Code's platform auto memory.
 
 Layer 2 (On-Demand — read when needed):
   memory/YYYY-MM-DD.md         raw daily logs (permanent, never deleted)
@@ -31,25 +31,20 @@ Layer 3 (Search — via qmd + compaction tree):
 ## Session Start (MANDATORY — run on first user message)
 
 **FIRST RESPONSE RULE:** On the very first user message of every session, before doing ANYTHING else:
-Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes priority over ANY user request — even if the user asks you to do something specific. Complete ALL steps below, ONLY THEN respond to the user.
+Run the Session Start protocol below FIRST. This takes priority over ANY user request — even if the user asks you to do something specific. Complete the step below, ONLY THEN respond to the user.
 
-MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded by the platform.
+SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md are auto-loaded via @import in CLAUDE.md. No manual read needed.
 
-**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
-1. **DO NOT SKIP** Read `SCRATCHPAD.md` — current work state
-2. **DO NOT SKIP** Read `WORKING.md` — active tasks
-3. **DO NOT SKIP** Read `TASK-QUEUE.md` — pending items
-4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
+**This procedure must be completed before responding to the user NO MATTER WHAT**
+1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
    Read `memory/.compaction-state.json` and `hipocampus.config.json` (`compaction.cooldownHours`, default 3).
    - **Within cooldown:** Skip compaction subagent — no dispatch needed.
-   - **Cooldown expired, file missing, or `cooldownHours` is 0:** Write `memory/.compaction-state.json` with `{ "lastCompactionRun": "<current ISO timestamp>" }`, then dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
+   - **Cooldown expired, file missing, or `cooldownHours` is 0:** Write `memory/.compaction-state.json` with `{ "lastCompactionRun": "<current ISO timestamp>" }`, then dispatch a subagent to run hipocampus:compaction skill (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
 
    State file is written immediately on dispatch (fire-and-forget), not after subagent completion. The cooldown tracks "a compaction was initiated," not "a compaction succeeded."
 
    **This step is MANDATORY every session. You MUST read the state file and make the judgment. The only thing that may be skipped is the subagent dispatch when cooldown is active.**
-**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
-
-Note: HEARTBEAT.md also handles needs-summarization at every heartbeat (~30 min).
+**This procedure must be completed before responding to the user NO MATTER WHAT**
 
 ## End-of-Task Checkpoint (MANDATORY)
 
@@ -66,7 +61,7 @@ Compose the subagent task:
 > - outcome: [what was done, files changed]
 > - references: [knowledge/ files, external sources]
 
-**The subagent only needs to do one thing: append to the daily log.** This is the source of truth — everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or by the agent naturally during work.
+**The subagent only needs to do one thing: append to the daily log.** This is the source of truth — everything else (SCRATCHPAD, WORKING, TASK-QUEUE) is updated lazily at next session start or by the agent naturally during work.
 
 **The subagent needs the task summary you provide** — it doesn't have access to the conversation.
 
@@ -88,8 +83,6 @@ This protects against context compression — if the platform compresses your co
 
 | File | Target | When Exceeded |
 |------|--------|---------------|
-| MEMORY.md Core | ~50 lines | Never touch — frozen |
-| MEMORY.md Adaptive | ~50 lines | Prune oldest entries |
 | ROOT.md | ~100 lines (~3K tokens) | Automatic recursive self-compression |
 | SCRATCHPAD | ~150 lines | Remove completed items |
 | WORKING | ~100 lines | Remove completed tasks |
@@ -97,8 +90,7 @@ This protects against context compression — if the platform compresses your co
 
 ## Rules
 
-- MEMORY.md Core section: **FROZEN**. Never compact, modify, or remove.
-- MEMORY.md Adaptive section: append-only within session, compactable across sessions.
+- Long-term facts are managed by platform auto memory. No separate MEMORY.md file.
 - Raw daily logs (`memory/YYYY-MM-DD.md`): **permanent**. Never delete or edit after session.
 - ROOT.md: managed by compaction process. Do not manually edit.
 - All memory writes via subagent — never pollute main session with memory operations.

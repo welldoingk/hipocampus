@@ -1,0 +1,10 @@
+{
+  "name": "hipocampus",
+  "description": "3-tier agent memory with 5-level compaction tree and hybrid search via qmd",
+  "version": "0.2.0",
+  "author": {
+    "name": "Kevin Sohn",
+    "url": "https://github.com/kevin-hs-sohn"
+  },
+  "repository": "https://github.com/kevin-hs-sohn/hipocampus"
+}

@@ -147,26 +147,30 @@ copyTemplate("WORKING.md");
 
 // ─── Step 4: Install skills ───
 
-// Platform-specific core skill + shared skills
-const coreSkillSrc = isOpenClaw ? "hipocampus-core-oc" : "hipocampus-core-cc";
-const sharedSkills = ["hipocampus-compaction", "hipocampus-search", "hipocampus-flush"];
-const allSkillSources = [coreSkillSrc, ...sharedSkills];
-// Installed as hipocampus-core (not hipocampus-core-cc/oc)
-const allSkillDests = ["hipocampus-core", ...sharedSkills];
+// Plugin namespace is canonical (hipocampus:core); init copies transform to standalone (hipocampus-core).
+// Invariant: frontmatter `name:` fields use hipocampus-xxx (not hipocampus:xxx), so replaceAll is safe.
+const coreSkillSrc = isOpenClaw
+  ? { dir: join("platforms", "openclaw", "core"), name: "core" }
+  : { dir: join("skills", "core"), name: "core" };
+const sharedSkillNames = ["compaction", "search", "flush"];
+const allSkills = [coreSkillSrc, ...sharedSkillNames.map(s => ({ dir: join("skills", s), name: s }))];
+const allSkillDests = ["hipocampus-core", ...sharedSkillNames.map(s => `hipocampus-${s}`)];
 
 // Claude Code: .claude/skills/  |  OpenClaw: skills/
 const skillsBase = isOpenClaw ? join(CWD, "skills") : join(CWD, ".claude", "skills");
 
-for (let i = 0; i < allSkillSources.length; i++) {
-  const srcName = allSkillSources[i];
+for (let i = 0; i < allSkills.length; i++) {
+  const skill = allSkills[i];
   const destName = allSkillDests[i];
   const destDir = join(skillsBase, destName);
   const destFile = join(destDir, "SKILL.md");
-  const src = join(ROOT, "skills", srcName, "SKILL.md");
+  const src = join(ROOT, skill.dir, "SKILL.md");
   if (!existsSync(destDir)) mkdirSync(destDir, { recursive: true });
   // Always overwrite — ensures updates propagate on reinstall/upgrade
   if (existsSync(src)) {
-    copyFileSync(src, destFile);
+    // Transform plugin namespace (hipocampus:xxx) to standalone (hipocampus-xxx) for init users
+    const content = readFileSync(src, "utf8").replaceAll("hipocampus:", "hipocampus-");
+    writeFileSync(destFile, content);
     console.log(`  + skill: ${destName}`);
   }
 }

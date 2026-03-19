@@ -1,6 +1,6 @@
 ---
 name: hipocampus-flush
-description: "Manual memory flush: dump current session context to daily raw log via subagent. Invoke with /hipocampus-flush. Run hipocampus-compaction afterwards for tree propagation and qmd reindex."
+description: "Manual memory flush: dump current session context to daily raw log via subagent. Invoke with /hipocampus:flush. Run hipocampus:compaction afterwards for tree propagation and qmd reindex."
 user_invocable: true
 ---
 
@@ -8,7 +8,7 @@ user_invocable: true
 
 Dump current session context to the daily raw log. Use when you want to persist what happened in this session without waiting for End-of-Task Checkpoint or context compression.
 
-For full compaction (needs-summarization processing, tree propagation, qmd reindex), run hipocampus-compaction skill after this.
+For full compaction (needs-summarization processing, tree propagation, qmd reindex), run hipocampus:compaction skill after this.
 
 ## Steps
 
