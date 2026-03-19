@@ -39,9 +39,14 @@ MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded
 1. **DO NOT SKIP** Read `SCRATCHPAD.md` — current work state
 2. **DO NOT SKIP** Read `WORKING.md` — active tasks
 3. **DO NOT SKIP** Read `TASK-QUEUE.md` — pending items
-4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (subagent):**
-   Dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
-   Always run — do not check first, the subagent handles it.
+4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
+   Read `memory/.compaction-state.json` and `hipocampus.config.json` (`compaction.cooldownHours`, default 3).
+   - **Within cooldown:** Skip compaction subagent — no dispatch needed.
+   - **Cooldown expired, file missing, or `cooldownHours` is 0:** Write `memory/.compaction-state.json` with `{ "lastCompactionRun": "<current ISO timestamp>" }`, then dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
+
+   State file is written immediately on dispatch (fire-and-forget), not after subagent completion. The cooldown tracks "a compaction was initiated," not "a compaction succeeded."
+
+   **This step is MANDATORY every session. You MUST read the state file and make the judgment. The only thing that may be skipped is the subagent dispatch when cooldown is active.**
 **ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
 
 Note: HEARTBEAT.md also handles needs-summarization at every heartbeat (~30 min).

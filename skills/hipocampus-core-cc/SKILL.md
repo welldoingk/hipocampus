@@ -36,9 +36,14 @@ Run the Session Start protocol below FIRST. This takes priority over ANY user re
 SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md are auto-loaded via @import in CLAUDE.md. No manual read needed.
 
 **This procedure must be completed before responding to the user NO MATTER WHAT**
-1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (subagent):**
-   Dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
-   Always run — do not check first, the subagent handles it.
+1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
+   Read `memory/.compaction-state.json` and `hipocampus.config.json` (`compaction.cooldownHours`, default 3).
+   - **Within cooldown:** Skip compaction subagent — no dispatch needed.
+   - **Cooldown expired, file missing, or `cooldownHours` is 0:** Write `memory/.compaction-state.json` with `{ "lastCompactionRun": "<current ISO timestamp>" }`, then dispatch a subagent to run hipocampus-compaction skill (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
+
+   State file is written immediately on dispatch (fire-and-forget), not after subagent completion. The cooldown tracks "a compaction was initiated," not "a compaction succeeded."
+
+   **This step is MANDATORY every session. You MUST read the state file and make the judgment. The only thing that may be skipped is the subagent dispatch when cooldown is active.**
 **This procedure must be completed before responding to the user NO MATTER WHAT**
 
 ## End-of-Task Checkpoint (MANDATORY)

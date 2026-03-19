@@ -187,18 +187,40 @@ if (isOpenClaw) {
 // ─── Step 5: Create config ───
 
 const configDest = join(CWD, "hipocampus.config.json");
-if (!existsSync(configDest)) {
+const DEFAULT_COMPACTION = { rootMaxTokens: 3000, cooldownHours: 3 };
+
+if (existsSync(configDest)) {
+  // Merge: add new fields without overwriting existing values
+  let existing = {};
+  try {
+    existing = JSON.parse(readFileSync(configDest, "utf8"));
+  } catch {
+    console.log("  ! hipocampus.config.json corrupted — resetting to defaults");
+    existing = { platform, search: { vector: !noVector, embedModel: "auto" } };
+  }
+
+  if (!existing.compaction || typeof existing.compaction !== "object") {
+    existing.compaction = DEFAULT_COMPACTION;
+  } else {
+    if (existing.compaction.cooldownHours === undefined) {
+      existing.compaction.cooldownHours = DEFAULT_COMPACTION.cooldownHours;
+    }
+    if (existing.compaction.rootMaxTokens === undefined) {
+      existing.compaction.rootMaxTokens = DEFAULT_COMPACTION.rootMaxTokens;
+    }
+  }
+
+  writeFileSync(configDest, JSON.stringify(existing, null, 2) + "\n");
+  console.log("  ~ hipocampus.config.json updated");
+} else {
   const config = {
     platform,
     search: {
       vector: !noVector,
       embedModel: "auto",
     },
-    compaction: {
-      rootMaxTokens: 3000,
-    },
+    compaction: DEFAULT_COMPACTION,
   };
-
   writeFileSync(configDest, JSON.stringify(config, null, 2) + "\n");
   console.log("  + hipocampus.config.json");
 }
@@ -237,7 +259,7 @@ if (hasQmd) {
 
 // ─── Step 7: Protocol injection ───
 
-const PROTOCOL_BLOCK_OC = `
+const PROTOCOL_BLOCK_OC = `<!-- hipocampus:protocol:start -->
 ## Hipocampus — Memory Protocol
 
 This project uses hipocampus 3-tier memory. Follow \`skills/hipocampus-core/SKILL.md\`.
@@ -252,7 +274,14 @@ Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes prio
 1. **DO NOT SKIP** Read \`SCRATCHPAD.md\` — current work state
 2. **DO NOT SKIP** Read \`WORKING.md\` — active tasks
 3. **DO NOT SKIP** Read \`TASK-QUEUE.md\` — pending items
-4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (subagent):** Dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first, the subagent handles it.
+4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
+   Read \`memory/.compaction-state.json\` and \`hipocampus.config.json\` (\`compaction.cooldownHours\`, default 3).
+   - **Within cooldown:** Skip compaction subagent — no dispatch needed.
+   - **Cooldown expired, file missing, or \`cooldownHours\` is 0:** Write \`memory/.compaction-state.json\` with \`{ "lastCompactionRun": "<current ISO timestamp>" }\`, then dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`.
+
+   State file is written immediately on dispatch (fire-and-forget), not after subagent completion. The cooldown tracks "a compaction was initiated," not "a compaction succeeded."
+
+   **This step is MANDATORY every session. You MUST read the state file and make the judgment. The only thing that may be skipped is the subagent dispatch when cooldown is active.**
 **ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
 
 Note: MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded by the platform.
@@ -271,9 +300,10 @@ Compose the log with ## headings per topic: what was requested, analysis, decisi
 - memory/*.md (raw): permanent, never delete
 - Search: see \`skills/hipocampus-search/SKILL.md\`
 - If this session ends NOW, the next session must be able to continue immediately
+<!-- hipocampus:protocol:end -->
 `;
 
-const PROTOCOL_BLOCK_CC = `
+const PROTOCOL_BLOCK_CC = `<!-- hipocampus:protocol:start -->
 ## Hipocampus — Memory Protocol
 
 This project uses hipocampus 3-tier memory. Follow \`.claude/skills/hipocampus-core/SKILL.md\`.
@@ -286,7 +316,14 @@ Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes prio
 ### Session Start (run on first user message.)
 SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md are auto-loaded via @import below — no manual read needed.
 **This procedure must be completed before responding to the user NO MATTER WHAT**
-1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (subagent):** Dispatch a subagent to run hipocampus-compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`. Always run — do not check first, the subagent handles it.
+1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
+   Read \`memory/.compaction-state.json\` and \`hipocampus.config.json\` (\`compaction.cooldownHours\`, default 3).
+   - **Within cooldown:** Skip compaction subagent — no dispatch needed.
+   - **Cooldown expired, file missing, or \`cooldownHours\` is 0:** Write \`memory/.compaction-state.json\` with \`{ "lastCompactionRun": "<current ISO timestamp>" }\`, then dispatch a subagent to run hipocampus-compaction skill (chain: Daily→Weekly→Monthly→Root), then run \`hipocampus compact\` + \`qmd update\` + \`qmd embed\`.
+
+   State file is written immediately on dispatch (fire-and-forget), not after subagent completion. The cooldown tracks "a compaction was initiated," not "a compaction succeeded."
+
+   **This step is MANDATORY every session. You MUST read the state file and make the judgment. The only thing that may be skipped is the subagent dispatch when cooldown is active.**
 **This procedure must be completed before responding to the user NO MATTER WHAT**
 
 ### End-of-Task Checkpoint (mandatory — subagent)
@@ -302,20 +339,35 @@ Compose the log with ## headings per topic: what was requested, analysis, decisi
 - memory/*.md (raw): permanent, never delete
 - Search: see \`.claude/skills/hipocampus-search/SKILL.md\`
 - If this session ends NOW, the next session must be able to continue immediately
+<!-- hipocampus:protocol:end -->
 `;
 
-const hasHipocampus = (text) => text.toLowerCase().includes("hipocampus");
+const MARKER_START = "<!-- hipocampus:protocol:start -->";
+const MARKER_END = "<!-- hipocampus:protocol:end -->";
+const LEGACY_PROTOCOL_RE = /## Hipocampus — Memory Protocol[\s\S]*?(?=\n## (?!#)|$)/;
+
+const replaceOrPrependProtocol = (content, protocolBlock) => {
+  if (content.includes(MARKER_START)) {
+    const re = new RegExp(
+      MARKER_START.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      + "[\\s\\S]*?"
+      + MARKER_END.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    );
+    return content.replace(re, protocolBlock.trim());
+  }
+  if (LEGACY_PROTOCOL_RE.test(content)) {
+    return content.replace(LEGACY_PROTOCOL_RE, protocolBlock.trim());
+  }
+  return protocolBlock.trimStart() + "\n" + content;
+};
 
 if (isOpenClaw) {
   // ── OpenClaw path ──
   if (existsSync(agentsMd)) {
-    const content = readFileSync(agentsMd, "utf8");
-    if (!hasHipocampus(content)) {
-      // Prepend: protocol block at top of AGENTS.md (highest priority)
-      const newContent = PROTOCOL_BLOCK_OC.trimStart() + "\n" + content;
-      writeFileSync(agentsMd, newContent);
-      console.log("  + added hipocampus protocol (top) to AGENTS.md");
-    }
+    let content = readFileSync(agentsMd, "utf8");
+    content = replaceOrPrependProtocol(content, PROTOCOL_BLOCK_OC);
+    writeFileSync(agentsMd, content);
+    console.log("  + hipocampus protocol updated in AGENTS.md");
   }
 
   // OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.)
@@ -345,27 +397,19 @@ if (isOpenClaw) {
   }
 } else {
   // ── Claude Code path ──
-  // Protocol block goes at the TOP of CLAUDE.md (highest priority)
-  // @memory/ROOT.md import goes after protocol block but before existing content
-
-  // @imports: platform auto-loads these at session start (no agent read needed)
-  const importBlock = [
-    "@memory/ROOT.md",
-    "@SCRATCHPAD.md",
-    "@WORKING.md",
-    "@TASK-QUEUE.md",
-  ].join("\n") + "\n";
-
   if (existsSync(claudeMd)) {
-    const content = readFileSync(claudeMd, "utf8");
-    if (!hasHipocampus(content)) {
-      // Prepend: protocol block + @imports + existing content
-      const newContent = PROTOCOL_BLOCK_CC.trimStart() + "\n" + importBlock + "\n" + content;
-      writeFileSync(claudeMd, newContent);
-      console.log("  + added hipocampus protocol (top) and @imports to CLAUDE.md");
+    let content = readFileSync(claudeMd, "utf8");
+    content = replaceOrPrependProtocol(content, PROTOCOL_BLOCK_CC);
+    // Ensure @imports exist (idempotent)
+    for (const imp of ["@memory/ROOT.md", "@SCRATCHPAD.md", "@WORKING.md", "@TASK-QUEUE.md"]) {
+      if (!content.includes(imp)) {
+        content = content.replace(MARKER_END, MARKER_END + "\n" + imp);
+      }
     }
+    writeFileSync(claudeMd, content);
+    console.log("  + hipocampus protocol updated in CLAUDE.md");
   } else {
-    // Create new CLAUDE.md: protocol block first, then @imports
+    const importBlock = ["@memory/ROOT.md", "@SCRATCHPAD.md", "@WORKING.md", "@TASK-QUEUE.md"].join("\n") + "\n";
     writeFileSync(claudeMd, PROTOCOL_BLOCK_CC.trimStart() + "\n" + importBlock);
     console.log("  + created CLAUDE.md with hipocampus protocol and @imports");
   }
