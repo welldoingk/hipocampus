@@ -11,7 +11,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 
 let CWD = process.cwd();
 const args = process.argv.slice(2);
@@ -338,19 +338,41 @@ if (dailyUpdated || weeklyUpdated || monthlyUpdated) {
     rootContent = rootContent.replace(/last-updated:.*/, `last-updated: ${today}`);
     writeFileSync(rootPath, rootContent);
 
-    // Sync ROOT.md content to MEMORY.md's Compaction Root section (for OpenClaw)
-    const memoryMdPath = join(CWD, "MEMORY.md");
-    if (existsSync(memoryMdPath)) {
+    // Extract ROOT.md body (skip frontmatter), demote headings for embedding
+    const rootBody = rootContent.replace(/^---[\s\S]*?---\n*/, "")
+      .replace(/^## /gm, "### ");
+    const compactionSection = `## Compaction Root\n<!-- Auto-synced from memory/ROOT.md by hipocampus compact -->\n\n${rootBody}\n`;
+
+    // Sync to all discoverable MEMORY.md files:
+    // 1. Project root MEMORY.md (OpenClaw, or npx hipocampus init users)
+    // 2. Claude Code auto memory MEMORY.md (derived from transcript_path)
+    const memoryMdPaths = new Set();
+    memoryMdPaths.add(join(CWD, "MEMORY.md"));
+    if (transcriptPath) {
+      const claudeProjectDir = dirname(transcriptPath);
+      memoryMdPaths.add(join(claudeProjectDir, "memory", "MEMORY.md"));
+    }
+
+    for (const memoryMdPath of memoryMdPaths) {
+      if (!existsSync(memoryMdPath)) {
+        // Create MEMORY.md with Compaction Root if it's the Claude auto memory path
+        if (transcriptPath && memoryMdPath.includes(".claude/projects/")) {
+          mkdirSync(dirname(memoryMdPath), { recursive: true });
+          writeFileSync(memoryMdPath, `# Project Memory Index\n\n${compactionSection}`);
+        }
+        continue;
+      }
       const memContent = readFileSync(memoryMdPath, "utf8");
       if (memContent.includes("## Compaction Root")) {
-        // Extract ROOT.md body (skip frontmatter)
-        const rootBody = rootContent.replace(/^---[\s\S]*?---\n*/, "")
-          .replace(/^## /gm, "### "); // demote headings to fit inside MEMORY.md
+        // Update existing section
         const updated = memContent.replace(
           /## Compaction Root[\s\S]*?(?=\n## |$)/,
-          `## Compaction Root\n<!-- Auto-synced from memory/ROOT.md by hipocampus compact -->\n\n${rootBody}\n`
+          compactionSection
         );
         writeFileSync(memoryMdPath, updated);
+      } else {
+        // Append new section
+        writeFileSync(memoryMdPath, memContent.trimEnd() + "\n\n" + compactionSection);
       }
     }
   }
