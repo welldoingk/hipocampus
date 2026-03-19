@@ -1,5 +1,59 @@
 #!/usr/bin/env bash
-# Hipocampus SessionStart hook — outputs memory protocol to stdout for agent injection.
+# Hipocampus SessionStart hook
+# 1. Auto-create memory directories and config if missing
+# 2. Output memory protocol to stdout for agent injection
+
+# ─── Auto-setup (idempotent) ───
+
+mkdir -p memory/daily memory/weekly memory/monthly knowledge plans 2>/dev/null
+
+# ROOT.md stub
+if [ ! -f memory/ROOT.md ]; then
+  cat > memory/ROOT.md <<'ROOTMD'
+---
+type: root
+status: tentative
+last-updated: 1970-01-01
+---
+
+## Active Context (recent ~7 days)
+<!-- Current work and priorities -->
+
+## Recent Patterns
+<!-- Cross-cutting insights -->
+
+## Historical Summary
+<!-- High-level timeline -->
+
+## Topics Index
+<!-- topic: keywords, references -->
+ROOTMD
+fi
+
+# hipocampus.config.json
+if [ ! -f hipocampus.config.json ]; then
+  cat > hipocampus.config.json <<'CONFIG'
+{
+  "platform": "claude-code",
+  "search": {
+    "vector": true,
+    "embedModel": "auto"
+  },
+  "compaction": {
+    "rootMaxTokens": 3000,
+    "cooldownHours": 3
+  }
+}
+CONFIG
+fi
+
+# Layer 1 templates
+[ ! -f SCRATCHPAD.md ] && echo "# Scratchpad\n\n<!-- Active working state -->" > SCRATCHPAD.md
+[ ! -f WORKING.md ] && echo "# Working\n\n<!-- Current tasks in progress -->" > WORKING.md
+[ ! -f TASK-QUEUE.md ] && echo "# Task Queue\n\n<!-- Queued items -->" > TASK-QUEUE.md
+
+# ─── Output protocol to stdout ───
+
 cat <<'PROTOCOL'
 ## Hipocampus — Memory Protocol (MANDATORY)
 
@@ -10,7 +64,7 @@ This project uses hipocampus 3-tier memory. The full protocol is in /hipocampus:
 **On the very first user message of every session**, before doing ANYTHING else:
 Run the Session Start protocol below FIRST. This takes priority over ANY user request. Complete the step below, ONLY THEN respond to the user.
 
-If SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md exist, read them first.
+Read SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md first.
 
 **This procedure must be completed before responding to the user NO MATTER WHAT**
 1. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
@@ -31,6 +85,4 @@ Compose the log with ## headings per topic: what was requested, analysis, decisi
 - memory/*.md (raw): permanent, never delete
 - Search: use /hipocampus:search skill
 - If this session ends NOW, the next session must be able to continue immediately
-
-If memory/ directory does not exist yet, run `npx hipocampus init` for full setup.
 PROTOCOL
