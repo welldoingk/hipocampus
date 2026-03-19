@@ -1,16 +1,22 @@
 {
   "name": "hipocampus",
-  "description": "Hipocampus plugin marketplace",
   "owner": {
     "name": "Kevin Sohn",
-    "url": "https://github.com/kevin-hs-sohn"
+    "email": "kevin@hipocampus.dev"
+  },
+  "metadata": {
+    "description": "Hipocampus plugin marketplace",
+    "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "hipocampus",
+      "source": "./",
       "description": "Persistent agent memory that survives across sessions — auto-compacting 3-tier memory with hybrid search",
       "version": "0.2.1",
-      "source": "."
+      "author": {
+        "name": "Kevin Sohn"
+      }
     }
   ]
 }
