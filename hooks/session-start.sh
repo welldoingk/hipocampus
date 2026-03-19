@@ -3,6 +3,14 @@
 # 1. Auto-create memory directories and config if missing
 # 2. Output memory protocol to stdout for agent injection
 
+# ─── Resolve project cwd from hook stdin JSON ───
+
+STDIN_DATA="$(cat)"
+PROJECT_CWD="$(echo "$STDIN_DATA" | grep -o '"cwd":"[^"]*"' | head -1 | cut -d'"' -f4)"
+if [ -n "$PROJECT_CWD" ] && [ -d "$PROJECT_CWD" ]; then
+  cd "$PROJECT_CWD"
+fi
+
 # ─── Auto-setup (idempotent) ───
 
 mkdir -p memory/daily memory/weekly memory/monthly knowledge plans 2>/dev/null

@@ -13,8 +13,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, copyFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const CWD = process.cwd();
-const MEMORY = join(CWD, "memory");
+let CWD = process.cwd();
 const args = process.argv.slice(2);
 
 // Use local date (not UTC) to match the user's calendar day
@@ -26,15 +25,18 @@ const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0"
 let transcriptPath = process.env.TRANSCRIPT_PATH;
 let transcriptSaved = false;
 
-// --stdin: read transcript_path from PreCompact hook JSON on stdin
+// --stdin: read hook JSON from stdin (PreCompact passes { cwd, transcript_path, ... })
 if (args.includes("--stdin")) {
   try {
     const chunks = [];
     for await (const chunk of process.stdin) chunks.push(chunk);
     const stdinData = JSON.parse(Buffer.concat(chunks).toString());
+    if (stdinData.cwd) CWD = stdinData.cwd;
     if (stdinData.transcript_path) transcriptPath = stdinData.transcript_path;
   } catch { /* stdin not available or not JSON — fall through to env var */ }
 }
+
+const MEMORY = join(CWD, "memory");
 
 if (transcriptPath && existsSync(transcriptPath)) {
   mkdirSync(MEMORY, { recursive: true });
