@@ -2,7 +2,7 @@
 
 Drop-in memory harness for AI agents. Zero infrastructure — just files.
 
-3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code) and [OpenClaw](https://github.com/openclaw) bots.
+3-tier memory architecture with a 5-level compaction tree, auto-loaded ROOT.md topic index, and optional hybrid search via [qmd](https://github.com/tobi/qmd). One command to set up, works immediately with [Claude Code](https://claude.ai/code), [OpenCode](https://opencode.ai/), and [OpenClaw](https://github.com/openclaw) bots.
 
 ## Install
 
@@ -24,8 +24,8 @@ npx hipocampus init
 This creates the full memory structure in your project:
 
 ```
-MEMORY.md              # Long-term memory (OpenClaw only — Claude Code uses platform auto memory)
-USER.md                # User profile (OpenClaw only — Claude Code uses platform auto memory)
+MEMORY.md              # Long-term memory (OpenCode/OpenClaw — Claude Code uses platform auto memory)
+USER.md                # User profile (OpenCode/OpenClaw — Claude Code uses platform auto memory)
 SCRATCHPAD.md          # Active working state
 WORKING.md             # Current tasks in progress
 TASK-QUEUE.md          # Task backlog (queued items only)
@@ -33,13 +33,15 @@ memory/                # ROOT.md + daily logs + 5-level compaction tree
 knowledge/             # Searchable knowledge base
 plans/                 # Task plans
 hipocampus.config.json     # Configuration
-.claude/skills/        # Agent skills (hipocampus-core, hipocampus-compaction, hipocampus-search)
+.claude/skills/        # Agent skills — Claude Code
+.opencode/skills/      # Agent skills — OpenCode
+.opencode/plugins/     # Compaction plugin — OpenCode
 ```
 
 It also:
 - Installs [qmd](https://github.com/tobi/qmd) for hybrid search (skip with `--no-search`)
-- Injects the memory protocol into CLAUDE.md (Claude Code) or AGENTS.md (OpenClaw)
-- Registers a pre-compaction hook for automatic memory preservation
+- Injects the memory protocol into CLAUDE.md (Claude Code) or AGENTS.md (OpenCode/OpenClaw)
+- Registers compaction hooks (Claude Code) or installs a native plugin (OpenCode) for automatic memory preservation
 - Auto-loads ROOT.md into the agent's system prompt
 - Adds memory files to `.gitignore`
 
@@ -54,12 +56,13 @@ npx hipocampus init --no-search
 
 # Override platform detection (auto-detects by default)
 npx hipocampus init --platform claude-code
+npx hipocampus init --platform opencode
 npx hipocampus init --platform openclaw
 ```
 
 ## What You Get
 
-Install hipocampus on a Claude Code or OpenClaw project, and your agent gains **persistent memory across sessions**. It remembers what you worked on, what decisions were made, what lessons were learned — and it knows what it knows without loading everything into context.
+Install hipocampus on a Claude Code, OpenCode, or OpenClaw project, and your agent gains **persistent memory across sessions**. It remembers what you worked on, what decisions were made, what lessons were learned — and it knows what it knows without loading everything into context.
 
 The effect is similar to injecting your entire conversation history into every API call, but at a fraction of the token cost (~3K tokens instead of 100K+).
 
@@ -115,8 +118,8 @@ Injected into every API call. The agent's "working memory" — what it needs to 
 | **WORKING.md** | Tasks in progress — status, blockers, next steps | Without this, the agent doesn't know what tasks are active |
 | **TASK-QUEUE.md** | Backlog of pending tasks | Without this, follow-up tasks from prior sessions are lost |
 | **memory/ROOT.md** | Compaction tree root — compressed index of ALL accumulated history (~100 lines) | **The key innovation.** This is what gives the agent awareness of its entire past at ~3K tokens. Like injecting all history, but 50x cheaper. |
-| **MEMORY.md** | Long-term facts, rules, lessons (OpenClaw only — Claude Code uses platform auto memory) | Core facts that apply to every interaction |
-| **USER.md** | User profile, preferences (OpenClaw only) | Personalization across sessions |
+| **MEMORY.md** | Long-term facts, rules, lessons (OpenCode/OpenClaw — Claude Code uses platform auto memory) | Core facts that apply to every interaction |
+| **USER.md** | User profile, preferences (OpenCode/OpenClaw) | Personalization across sessions |
 
 **ROOT.md deserves special attention.** It's a ~100-line functional index that compresses ALL past conversations and work into four sections:
 
@@ -210,14 +213,14 @@ Hipocampus has four execution mechanisms — all set up automatically by `npx hi
 
 ### 1. Session Protocol (agent-driven)
 
-The hipocampus-core skill instructs the agent what to do at session start and after every task. This is injected into CLAUDE.md (Claude Code) or AGENTS.md (OpenClaw) during init, so the agent follows it automatically.
+The hipocampus-core skill instructs the agent what to do at session start and after every task. This is injected into CLAUDE.md (Claude Code) or AGENTS.md (OpenCode/OpenClaw) during init, so the agent follows it automatically.
 
 **Session Start (FIRST RESPONSE RULE — runs before anything else on first user message):**
 
 ```
 1. Read hipocampus.config.json → determine platform
-2. OpenClaw only: Read MEMORY.md (long-term memory)
-3. OpenClaw only: Read USER.md (user profile)
+2. OpenCode/OpenClaw: Read MEMORY.md (long-term memory + Compaction Root)
+3. OpenCode/OpenClaw: Read USER.md (user profile)
 4. Claude Code legacy: Read MEMORY.md if it exists (migration support)
 5. Read SCRATCHPAD.md — current work state
 6. Read WORKING.md — active tasks
@@ -229,7 +232,7 @@ The hipocampus-core skill instructs the agent what to do at session start and af
     files → LLM summaries → hipocampus compact → qmd reindex
 ```
 
-ROOT.md is auto-loaded by the platform — no manual read needed.
+ROOT.md is auto-loaded on Claude Code (via @import). On OpenCode/OpenClaw, it's embedded as a Compaction Root section in MEMORY.md.
 
 **End-of-Task Checkpoint:**
 
@@ -289,7 +292,7 @@ This format includes enough detail for the daily compaction node to extract keyw
 
 ### 3. Proactive Flush (agent-driven, prevents context loss)
 
-Both Claude Code and OpenClaw automatically compress conversation context when it gets too long. If the agent hasn't written to the daily log before compression, those details are **lost forever**.
+Claude Code, OpenCode, and OpenClaw all automatically compress conversation context when it gets too long. If the agent hasn't written to the daily log before compression, those details are **lost forever**.
 
 The hipocampus-core skill instructs the agent to flush proactively by dispatching a subagent with a summary of recent work:
 
@@ -314,15 +317,16 @@ The daily log is append-only, so multiple flushes in the same session are safe. 
 
 PreCompact hooks only support `type: "command"` (no agent hooks). Mechanical compaction runs automatically; LLM processing is deferred to session start, heartbeat, or manual `/hipocampus-flush`.
 
-**Both platforms — PreCompact hook (mechanical only):**
+**All platforms — mechanical compaction:**
 
 ```
 Context fills up
-  → PreCompact hook fires
-  → hipocampus compact --stdin (command hook):
+  → Claude Code: PreCompact hook fires → hipocampus compact --stdin
+  → OpenCode: session.compacted plugin event → hipocampus compact
+  → OpenClaw: PreCompact hook fires → hipocampus compact --stdin
       1. Back up session transcript to memory/.session-transcript-YYYY-MM-DD.jsonl
       2. Mechanical compaction (verbatim/concat, needs-summarization marking)
-      3. Update ROOT.md timestamp + sync to MEMORY.md (OpenClaw)
+      3. Update ROOT.md timestamp + sync to MEMORY.md (OpenCode/OpenClaw)
       4. qmd update + qmd embed
   → Context compression proceeds
 ```
@@ -331,19 +335,25 @@ Context fills up
 
 ```
 Claude Code:
-  → Session Start step 9: check needs-summarization → hipocampus-compaction skill
+  → Session Start: check needs-summarization → hipocampus-compaction skill
   → Manual: /hipocampus-flush (flush + full compaction + qmd reindex)
+
+OpenCode:
+  → Session Start: same check as Claude Code
+  → session.idle plugin event: mechanical compaction after each task
+  → Manual: /hipocampus-flush
 
 OpenClaw:
   → Every heartbeat (~30 min): HEARTBEAT.md checks needs-summarization
-  → Session Start step 9: same check as Claude Code
+  → Session Start: same check as Claude Code
   → Manual: /hipocampus-flush
 ```
 
 | Platform | Mechanical Compaction | LLM Compaction | Manual |
 |----------|----------------------|----------------|--------|
-| Claude Code | PreCompact command hook | Session Start + `/hipocampus-flush` | `/hipocampus-flush` |
-| OpenClaw | PreCompact command hook | HEARTBEAT.md + Session Start | `/hipocampus-flush` |
+| Claude Code | PreCompact + TaskCompleted hooks | Session Start + `/hipocampus-flush` | `/hipocampus-flush` |
+| OpenCode | Native plugin (session.idle + session.compacted) | Session Start + `/hipocampus-flush` | `/hipocampus-flush` |
+| OpenClaw | PreCompact hook | HEARTBEAT.md + Session Start | `/hipocampus-flush` |
 
 ### ROOT.md Auto-Loading
 
@@ -352,9 +362,10 @@ ROOT.md must be in the agent's context at every session start. Each platform has
 | Platform | Mechanism | Registered by init |
 |----------|-----------|-------------------|
 | Claude Code | `@memory/ROOT.md` import in CLAUDE.md | Automatic |
+| OpenCode | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
 | OpenClaw | Embedded as `## Compaction Root` section in MEMORY.md (auto-synced by `hipocampus compact`) | Automatic |
 
-OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.) — ROOT.md can't be added to that list. Instead, hipocampus embeds the ROOT content as a section inside MEMORY.md, which is always bootstrapped. The `hipocampus compact` command keeps this section in sync with `memory/ROOT.md`.
+OpenCode and OpenClaw don't support auto-loading arbitrary files — ROOT.md can't be added to the system prompt directly. Instead, hipocampus embeds the ROOT content as a section inside MEMORY.md, which the agent reads at session start. The `hipocampus compact` command keeps this section in sync with `memory/ROOT.md`.
 
 ### Execution Summary
 
@@ -367,8 +378,9 @@ OpenClaw bootstraps a fixed set of files (AGENTS.md, MEMORY.md, etc.) — ROOT.m
 | Task End (OC) | Update hot files + dispatch daily log | Every task completion | **Partial** (daily log only) | LLM |
 | End-of-Task Checkpoint (CC) | Update all memory files + daily log | Every task completion | **Yes** | LLM |
 | Proactive flush | Dump context to daily log | Every ~20 messages | **Yes** | LLM |
-| Pre-compaction hook | Mechanical compaction + qmd reindex | Before context compression | No (command hook) | Zero LLM |
+| Pre-compaction hook (CC) | Mechanical compaction + qmd reindex | Before context compression | No (command hook) | Zero LLM |
 | TaskCompleted hook (CC) | Mechanical compaction | After each task | No (command hook) | Zero LLM |
+| Plugin events (OCode) | Mechanical compaction | session.idle + session.compacted | No (plugin) | Zero LLM |
 | Heartbeat (OpenClaw) | Process needs-summarization | Every ~30 min | Isolated session | LLM (if files exist) |
 | `/hipocampus-flush` | Manual: session → daily raw + compact | On demand | **Yes** | LLM |
 | ROOT.md auto-load | Topic index in system prompt | Every session start | No (platform) | ~3K tokens |
@@ -379,8 +391,8 @@ Everything is set up by `npx hipocampus init`. The user never has to think about
 
 ```
 project/
-├── MEMORY.md                        (OpenClaw only)
-├── USER.md                          (OpenClaw only)
+├── MEMORY.md                        (OpenCode/OpenClaw only)
+├── USER.md                          (OpenCode/OpenClaw only)
 ├── SCRATCHPAD.md
 ├── WORKING.md
 ├── TASK-QUEUE.md
@@ -393,12 +405,13 @@ project/
 │   └── monthly/                     # Monthly index nodes
 ├── knowledge/
 ├── plans/
-├── .claude/
-│   ├── skills/
-│   │   ├── hipocampus-core/SKILL.md
-│   │   ├── hipocampus-compaction/SKILL.md
-│   │   └── hipocampus-search/SKILL.md
-│   └── settings.json                # PreCompact hook (Claude Code)
+├── .claude/                         (Claude Code)
+│   ├── skills/hipocampus-*/SKILL.md
+│   └── settings.json                # PreCompact + TaskCompleted hooks
+├── .opencode/                       (OpenCode)
+│   ├── skills/hipocampus-*/SKILL.md
+│   └── plugins/hipocampus.js        # Native plugin (session.idle + session.compacted)
+├── opencode.json                    (OpenCode — plugin registration)
 └── hipocampus.config.json
 ```
 
@@ -421,7 +434,7 @@ project/
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `platform` | string | auto-detected | `"claude-code"` or `"openclaw"` — determines memory file behavior |
+| `platform` | string | auto-detected | `"claude-code"`, `"opencode"`, or `"openclaw"` — determines memory file behavior |
 | `search.vector` | boolean | `true` | Enable vector embeddings (~2GB disk) |
 | `search.embedModel` | string | `"auto"` | `"auto"` for embeddinggemma-300M, `"qwen3"` for CJK-optimized |
 | `compaction.rootMaxTokens` | number | `3000` | Max token budget for ROOT.md (~100 lines) |
@@ -437,9 +450,9 @@ qmd is optional. Use `--no-search` during init to skip it entirely. Without qmd,
 
 ## Skills
 
-Hipocampus installs four agent skills into `.claude/skills/`:
+Hipocampus installs four agent skills (into `.claude/skills/`, `.opencode/skills/`, or `skills/` depending on platform):
 
-- **hipocampus-core** — Session start protocol + end-of-task checkpoint. Platform-conditional: Claude Code uses platform auto memory with subagent writes; OpenClaw uses MEMORY.md/USER.md with a mandatory Task Lifecycle (Task Start/End) that enforces hot file updates directly from the main agent. Defines the structured daily log format, proactive flush rules, compaction trigger check, and stale task recovery. The core discipline that makes memory work.
+- **hipocampus-core** — Session start protocol + end-of-task checkpoint. Platform-conditional: Claude Code uses platform auto memory with subagent writes; OpenCode uses MEMORY.md/USER.md with event-driven plugin compaction; OpenClaw uses MEMORY.md/USER.md with a mandatory Task Lifecycle (Task Start/End) that enforces hot file updates directly from the main agent. Defines the structured daily log format, proactive flush rules, compaction trigger check, and stale task recovery. The core discipline that makes memory work.
 - **hipocampus-compaction** — Builds the 5-level compaction tree (daily/weekly/monthly/root). Smart thresholds: copy/concat below threshold, LLM keyword-dense summary above threshold. Fixed/tentative lifecycle management. Handles `needs-summarization` nodes left by mechanical compaction.
 - **hipocampus-search** — Search guide: ROOT.md Topics Index for "do I know about this?" judgment, hybrid vs BM25 selection, query construction rules, compaction tree fallback traversal, and guidance for working without qmd.
 - **hipocampus-flush** (`/hipocampus-flush`) — Manual memory flush via subagent: dump current session context to daily raw log + mechanical compact. Use when you want to persist session state on demand. For full LLM compaction afterwards, run hipocampus-compaction.
@@ -490,7 +503,7 @@ The memory system is formally specified in [`spec/`](./spec/):
 
 `npx hipocampus init` auto-appends memory files to `.gitignore` — personal memory should not be committed.
 
-**What to commit:** `hipocampus.config.json` and `.claude/skills/` — these define the shared project memory structure. All team members get the same skill documents.
+**What to commit:** `hipocampus.config.json` and skills directories (`.claude/skills/`, `.opencode/skills/`, or `skills/`) — these define the shared project memory structure. All team members get the same skill documents.
 
 **What not to commit:** Everything else (MEMORY.md, USER.md if present, SCRATCHPAD, WORKING, TASK-QUEUE, memory/, knowledge/, plans/) is personal context. Each developer runs `npx hipocampus init` to set up their own memory.
 
