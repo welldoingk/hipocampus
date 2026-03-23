@@ -35,11 +35,12 @@ Run the Session Start protocol below FIRST (ALL steps. NO SKIP.) This takes prio
 
 MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded by the platform.
 
-**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
+**ALL 5 procedures must be completed before responding to the user NO MATTER WHAT**
 1. **DO NOT SKIP** Read `SCRATCHPAD.md` — current work state
 2. **DO NOT SKIP** Read `WORKING.md` — active tasks
-3. **DO NOT SKIP** Read `TASK-QUEUE.md` — pending items
-4. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
+3. **DO NOT SKIP** **Stale task recovery:** If WORKING.md contains tasks with `status: in-progress` from a previous session, assess whether they completed (check daily log, file state, git history). Update each to `done`, `failed`, or `abandoned` with a one-line outcome. Update SCRATCHPAD.md to match.
+4. **DO NOT SKIP** Read `TASK-QUEUE.md` — pending items
+5. **DO NOT SKIP** **DO NOT COMPROMISE** **Compaction maintenance (cooldown-gated):**
    Read `memory/.compaction-state.json` and `hipocampus.config.json` (`compaction.cooldownHours`, default 3).
    - **Within cooldown:** Skip compaction subagent — no dispatch needed.
    - **Cooldown expired, file missing, or `cooldownHours` is 0:** Write `memory/.compaction-state.json` with `{ "lastCompactionRun": "<current ISO timestamp>" }`, then dispatch a subagent to run hipocampus:compaction skill USING SUBAGENTS (chain: Daily→Weekly→Monthly→Root), then run `hipocampus compact` + `qmd update` + `qmd embed`.
@@ -47,15 +48,80 @@ MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded
    State file is written immediately on dispatch (fire-and-forget), not after subagent completion. The cooldown tracks "a compaction was initiated," not "a compaction succeeded."
 
    **This step is MANDATORY every session. You MUST read the state file and make the judgment. The only thing that may be skipped is the subagent dispatch when cooldown is active.**
-**ALL 4 procedures must be completed before responding to the user NO MATTER WHAT**
+**ALL 5 procedures must be completed before responding to the user NO MATTER WHAT**
 
 Note: HEARTBEAT.md also handles needs-summarization at every heartbeat (~30 min).
 
+## Task Lifecycle (MANDATORY)
+
+Every logical work unit follows a Task Start → Task End cycle. The main agent writes hot files directly — no subagent needed.
+
+### What Is a Task?
+
+A logical work unit — bug fix, feature implementation, investigation, refactor.
+
+**New task if:**
+- User requests new work (different goal from current)
+- Topic/objective changes
+
+**Same task (no new Task Start):**
+- Follow-up messages on the same work
+- Clarifying questions within the same goal
+
+**Not a task (skip Task Start/End entirely):**
+- Quick factual questions requiring no file changes or analysis
+- Simple clarifications about previous work
+
+### Task Start (MANDATORY)
+
+When starting a new logical task, the main agent writes directly:
+
+1. **Update WORKING.md** — add entry:
+   ```markdown
+   ## [Task Name]
+   - status: in-progress
+   - started: YYYY-MM-DD HH:MM
+   - goal: [one-line goal]
+   ```
+   Timestamp is best-effort. If wall-clock time is unavailable, use daily log date plus sequence number (e.g., `2026-03-23 #2`).
+
+2. **Update SCRATCHPAD.md** — set current focus:
+   ```markdown
+   ## Current Focus
+   [Task Name] — [what I'm doing now, next step]
+   ```
+   If SCRATCHPAD.md exceeds ~150 lines, prune stale content before adding.
+
+### Task End (MANDATORY)
+
+When a task completes, fails, or is abandoned — **in this order:**
+
+1. **Update WORKING.md** — main agent directly:
+   ```markdown
+   ## [Task Name]
+   - status: done | failed | abandoned
+   - started: YYYY-MM-DD HH:MM
+   - outcome: [one-line result or reason]
+   ```
+
+2. **Update SCRATCHPAD.md** — main agent directly:
+   - Remove completed/failed/abandoned items
+   - Replace Current Focus with next task (or clear)
+
+3. **Append to daily log** — dispatch subagent:
+   - `memory/YYYY-MM-DD.md` in checkpoint format (see End-of-Task Checkpoint below)
+
+**Order matters:** Hot files first, daily log second. This guarantees hot state is captured even if subagent dispatch fails or session ends.
+
+### Concurrent Tasks
+
+Multiple `in-progress` tasks in WORKING.md are allowed. Each gets its own entry and its own Task End. SCRATCHPAD.md Current Focus reflects whichever task is actively being worked on.
+
 ## End-of-Task Checkpoint (MANDATORY)
 
-After completing any task, **dispatch a subagent** to append a structured log to `memory/YYYY-MM-DD.md`.
+This is step 3 of Task End — run AFTER updating hot files (WORKING.md, SCRATCHPAD.md).
 
-Compose the subagent task:
+**Dispatch a subagent** to append a structured log to `memory/YYYY-MM-DD.md`:
 
 > Append the following to memory/YYYY-MM-DD.md:
 >
@@ -66,11 +132,20 @@ Compose the subagent task:
 > - outcome: [what was done, files changed]
 > - references: [knowledge/ files, external sources]
 
-**The subagent only needs to do one thing: append to the daily log.** This is the source of truth — everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or by the agent naturally during work.
-
 **The subagent needs the task summary you provide** — it doesn't have access to the conversation.
 
-**Priority if timeout imminent** (no time for subagent — write directly to `memory/YYYY-MM-DD.md`)
+### Source of Truth
+
+- **Current task status:** WORKING.md is authoritative
+- **Completed task detail:** daily log (`memory/YYYY-MM-DD.md`) is authoritative
+- **Active working state:** SCRATCHPAD.md is authoritative
+
+### Timeout-Imminent Priority
+
+If session termination is imminent and no time for subagent:
+1. Write hot files directly (WORKING.md, SCRATCHPAD.md) — most critical
+2. Write daily log directly if time permits
+Hot files take priority — daily log can be reconstructed from context, stale hot files cannot.
 
 ## Proactive Session Dump
 
@@ -83,6 +158,8 @@ Compose the subagent task:
 Compose the subagent task with a summary of what to dump, same as the checkpoint format. The subagent writes the file; the main session stays clean.
 
 This protects against context compression — if the platform compresses your conversation history, undumped details are lost forever. Write early, write often. The daily log is append-only, so multiple dumps in the same session are fine.
+
+Proactive dumps do NOT trigger hot file updates (WORKING.md, SCRATCHPAD.md). Hot files are only updated at Task Start and Task End boundaries.
 
 ## File Size Targets
 
@@ -101,7 +178,7 @@ This protects against context compression — if the platform compresses your co
 - MEMORY.md Adaptive section: append-only within session, compactable across sessions.
 - Raw daily logs (`memory/YYYY-MM-DD.md`): **permanent**. Never delete or edit after session.
 - ROOT.md: managed by compaction process. Do not manually edit.
-- All memory writes via subagent — never pollute main session with memory operations.
+- **Write authority:** Hot files (WORKING.md, SCRATCHPAD.md, TASK-QUEUE.md, MEMORY.md Adaptive) are written directly by the main agent. Layer 2+ files (daily logs, knowledge/) are written via subagent.
 - If this session ends NOW, the next session must be able to continue immediately.
 - Don't skip checkpoints — lost context means you forget.
 

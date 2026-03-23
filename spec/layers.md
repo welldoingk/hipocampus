@@ -21,6 +21,7 @@ Injected into every API call. Must stay small (~500 lines total across all files
 - Loaded every API call — keep lean
 - Stable content maximizes prompt cache hit rate (up to 90% token savings)
 - Agent-curated — the agent reads AND writes these files
+- **Write authority:** Main agent writes hot files directly (no subagent). On OpenClaw, this is enforced by the Task Lifecycle protocol (Task Start/End). On Claude Code, `@import` visibility drives natural updates.
 - MEMORY.md has frozen Core section + compactable Adaptive section
 - memory/ROOT.md is auto-loaded by the platform (not manually read by the agent)
 
@@ -75,6 +76,7 @@ Read by the agent when needed, not injected into system prompt.
 - Knowledge files are curated by the agent for search discoverability
 - No size limit per file, but agent should keep them focused
 - Daily logs feed the Layer 3 compaction tree as leaf nodes (Raw level)
+- **Write authority:** Subagent writes Layer 2 files to protect main session context
 
 ## Layer 3: Search (Cold Memory)
 

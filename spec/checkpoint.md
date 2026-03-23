@@ -13,20 +13,32 @@ SCRATCHPAD.md, WORKING.md, TASK-QUEUE.md, memory/ROOT.md are auto-loaded via @im
 
 1. **Compaction maintenance (subagent):** Dispatch a subagent to run hipocampus-compaction skill using subagents. Always run — do not check first.
 
-### OpenClaw (4 steps)
+### OpenClaw (5 steps)
 
 MEMORY.md, USER.md, memory/ROOT.md (via Compaction Root section) are auto-loaded by the platform.
 
 1. Read `SCRATCHPAD.md` — current work state
 2. Read `WORKING.md` — active tasks
-3. Read `TASK-QUEUE.md` — pending items
-4. **Compaction maintenance (subagent):** Dispatch a subagent to run hipocampus-compaction skill using subagents. Always run.
+3. **Stale task recovery:** If WORKING.md contains tasks with `status: in-progress` from a previous session, assess whether they completed (check daily log, file state, git history). Update each to `done`, `failed`, or `abandoned`. Update SCRATCHPAD.md to match.
+4. Read `TASK-QUEUE.md` — pending items
+5. **Compaction maintenance (subagent):** Dispatch a subagent to run hipocampus-compaction skill using subagents. Always run.
 
-## End-of-Task Checkpoint (Mandatory — subagent)
+## End-of-Task Checkpoint (Mandatory)
+
+### OpenClaw — Task Lifecycle
+
+Every logical work unit follows Task Start → Task End. Hot files are written directly by the main agent (no subagent).
+
+**Task Start:** Update WORKING.md (add in-progress entry) + SCRATCHPAD.md (set current focus).
+**Task End (in order):** Update WORKING.md (done/failed/abandoned) → Update SCRATCHPAD.md (clear/replace) → Dispatch subagent for daily log.
+
+Quick factual questions that require no file changes are not tasks — skip the lifecycle.
+
+See `hipocampus/platforms/openclaw/core/SKILL.md` for full protocol.
+
+### All Platforms — Daily Log
 
 After completing any task, **dispatch a subagent** to append a structured log to `memory/YYYY-MM-DD.md`.
-
-The subagent only needs to do one thing: append to the daily log. This is the source of truth — everything else (SCRATCHPAD, WORKING, TASK-QUEUE, MEMORY.md) is updated lazily at next session start or naturally during work.
 
 ### Daily log format
 
@@ -52,14 +64,17 @@ Do not wait for task completion. Dispatch a subagent to flush to the daily log w
 ## Priority if Timeout Imminent
 
 If session termination is imminent and no time for subagent:
-1. Write directly to `memory/YYYY-MM-DD.md` — most critical
-2. Everything else is recoverable from the daily log at next session start
+
+**OpenClaw:** Write hot files (WORKING.md, SCRATCHPAD.md) first — most critical. Write daily log directly if time permits. Hot files take priority because stale state cannot be reconstructed.
+
+**Claude Code / OpenCode:** Write directly to `memory/YYYY-MM-DD.md` — most critical. Hot files are auto-loaded via @import and naturally stay current.
 
 ## Rules
 
 - **OpenClaw:** MEMORY.md Core section: **FROZEN**. Never compact, modify, or remove.
 - Daily logs (`memory/YYYY-MM-DD.md`): **permanent**. Never edit after the session ends.
-- All memory writes via subagent — never pollute main session context.
+- **OpenClaw write authority:** Hot files (Layer 1) written directly by main agent. Layer 2+ files written via subagent.
+- **Claude Code / OpenCode:** All memory writes via subagent.
 - If session ends NOW, the next session must be able to continue immediately.
 
 ## Edge Cases
