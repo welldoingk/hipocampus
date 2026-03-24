@@ -116,13 +116,13 @@ The agent reads ROOT.md at session start (as it always does) and sees in the Top
 
 A RAG-based system would never search for "rate limiting" here. The user asked for a refactor, not a rate limiting review. The connection only exists because the agent can **see** its own knowledge map.
 
-**Example 2 — Resuming without a query:**
+**Example 2 — Recalling across weeks without a specific query:**
 
-> User: "Continue from last time."
+> User: "Can you organize what we've been working on? What's on our plate?"
 
-ROOT.md's Active Context section immediately shows what was in progress. No search needed — the answer is already loaded.
+ROOT.md's Active Context + Topics Index instantly surfaces three weeks of work: DB migration (in progress), auth middleware refactor (completed), monitoring dashboard (on hold). The agent knows each item's status and last decision — without reading a single file.
 
-A RAG-based system can't even form a query. "Last time" has no keywords to search for, no embeddings to match against. The system would have to search for... everything? Nothing? It's a structural dead end.
+A RAG-based system would search "working on" and get nothing useful. Answering this requires reading every session from the past three weeks, or having a pre-built overview. RAG has neither — it needs a specific query to return specific results. This is a query about the shape of your knowledge, not a specific fact within it.
 
 **Example 3 — Discovering unexpected relevance:**
 
