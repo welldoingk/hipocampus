@@ -18,14 +18,18 @@ if (!command || command === "--help" || command === "-h") {
 
   Usage:
     hipocampus init                          Initialize memory system in current directory
-    hipocampus init --no-vector              Disable vector search (BM25 only)
-    hipocampus init --no-search              Skip qmd entirely (use tree traversal only)
+    hipocampus init --tenant <id>            Initialize a tenant subdirectory
+    hipocampus update                        Update skills and protocol to latest version
     hipocampus compact                       Run mechanical compaction (called automatically by hooks)
+    hipocampus uninstall                     Remove hipocampus (keeps memory data)
+    hipocampus uninstall --purge             Remove hipocampus and all memory data
+    hipocampus uninstall --tenant <id>       Remove a specific tenant
 
   Options:
     --no-vector        Disable vector search (saves ~2GB disk, no embedding models)
     --no-search        Skip qmd installation and search setup (compaction tree still works)
     --platform <name>  Override platform detection (claude-code, openclaw, or opencode)
+    --tenant <id>      Create/manage a tenant subdirectory (alphanumeric + hyphens, 1-64 chars)
     --help, -h         Show this help
 `);
   process.exit(0);
@@ -38,7 +42,13 @@ if (command === "compact") {
   process.exit(0);
 }
 
-if (command !== "init") {
+if (command === "update") {
+  console.log("\n  hipocampus — updating to latest version\n");
+  // Fall through to init logic — init is already idempotent
+  // Skills are always overwritten, templates skip if exists
+}
+
+if (command !== "init" && command !== "update") {
   console.error(`Unknown command: ${command}. Run 'hipocampus --help' for usage.`);
   process.exit(1);
 }
