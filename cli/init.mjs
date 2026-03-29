@@ -62,6 +62,15 @@ if (platformOverride && !["claude-code", "openclaw", "opencode"].includes(platfo
   process.exit(1);
 }
 
+const tenantIdx = args.indexOf("--tenant");
+const tenantId = tenantIdx !== -1 ? args[tenantIdx + 1] : null;
+if (tenantId) {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/.test(tenantId)) {
+    console.error('  ! Invalid tenant ID. Use alphanumeric + hyphens, 1-64 chars, start with alphanumeric.');
+    process.exit(1);
+  }
+}
+
 console.log("\n  hipocampus — initializing memory system\n");
 
 // ─── Step 1: Check qmd ───
@@ -587,6 +596,7 @@ TASK-QUEUE.md
 memory/
 knowledge/
 plans/
+tenants/
 `;
 
 if (existsSync(gitignorePath)) {
@@ -721,6 +731,113 @@ if (isOpenCode) {
     appendFileSync(gitignorePath, "\n# hipocampus plugin (generated)\n.opencode/plugins/hipocampus.js\n");
     console.log("  + added plugin to .gitignore");
   }
+}
+
+// ─── Tenant init (if --tenant specified) ───
+
+if (tenantId) {
+  const configPath = join(CWD, "hipocampus.config.json");
+  if (!existsSync(configPath)) {
+    console.error("  ! Run 'hipocampus init' first before adding tenants.");
+    process.exit(1);
+  }
+
+  const tenantDir = join(CWD, "tenants", tenantId);
+  console.log(`\n  setting up tenant: ${tenantId}\n`);
+
+  // Create tenant directory structure
+  const tenantDirs = [
+    "", "memory", "memory/daily", "memory/weekly", "memory/monthly",
+    "knowledge", "plans"
+  ];
+  for (const dir of tenantDirs) {
+    const p = join(tenantDir, dir);
+    if (!existsSync(p)) {
+      mkdirSync(p, { recursive: true });
+      if (dir) console.log(`  + tenants/${tenantId}/${dir}/`);
+    }
+  }
+
+  // Copy templates into tenant dir
+  const tenantTemplates = ["SCRATCHPAD.md", "WORKING.md", "TASK-QUEUE.md"];
+  // OpenClaw/OpenCode also get MEMORY.md and USER.md
+  if (isOpenClaw || isOpenCode) {
+    tenantTemplates.unshift("MEMORY.md", "USER.md");
+  }
+  for (const tmpl of tenantTemplates) {
+    const dest = join(tenantDir, tmpl);
+    if (!existsSync(dest)) {
+      copyFileSync(join(ROOT, "templates", tmpl), dest);
+      console.log(`  + tenants/${tenantId}/${tmpl}`);
+    }
+  }
+
+  // Create tenant ROOT.md
+  const tenantRootMd = join(tenantDir, "memory", "ROOT.md");
+  if (!existsSync(tenantRootMd)) {
+    const today = new Date().toISOString().slice(0, 10);
+    writeFileSync(tenantRootMd, `---
+type: root
+status: tentative
+last-updated: ${today}
+tenant: ${tenantId}
+---
+
+## Active Context (recent ~7 days)
+<!-- Current work and priorities -->
+
+## Recent Patterns
+<!-- Cross-cutting insights -->
+
+## Historical Summary
+<!-- High-level timeline -->
+
+## Topics Index
+<!-- topic: keywords, references -->
+`);
+    console.log(`  + tenants/${tenantId}/memory/ROOT.md`);
+  }
+
+  // Copy tenant config (inherit from root, add tenant field)
+  const tenantConfigPath = join(tenantDir, "hipocampus.config.json");
+  if (!existsSync(tenantConfigPath)) {
+    const rootConfig = JSON.parse(readFileSync(configPath, "utf8"));
+    const tenantConfig = { ...rootConfig, tenant: tenantId };
+    delete tenantConfig.tenants; // Don't nest tenants array
+    writeFileSync(tenantConfigPath, JSON.stringify(tenantConfig, null, 2) + "\n");
+    console.log(`  + tenants/${tenantId}/hipocampus.config.json`);
+  }
+
+  // Register tenant in root config
+  const rootConfig = JSON.parse(readFileSync(configPath, "utf8"));
+  rootConfig.tenants = rootConfig.tenants || [];
+  if (!rootConfig.tenants.includes(tenantId)) {
+    rootConfig.tenants.push(tenantId);
+    writeFileSync(configPath, JSON.stringify(rootConfig, null, 2) + "\n");
+    console.log(`  + registered tenant "${tenantId}" in hipocampus.config.json`);
+  }
+
+  // Register tenant qmd collections (if qmd available)
+  if (hasQmd) {
+    const tryExec = (cmd, label) => {
+      try {
+        execSync(cmd, { cwd: CWD, stdio: "pipe" });
+        console.log(`  + ${label}`);
+      } catch { /* collection may already exist */ }
+    };
+    tryExec(`qmd collection add ./tenants/${tenantId}/memory --name tenant-${tenantId}-memory`, `collection: tenant-${tenantId}-memory`);
+    tryExec(`qmd collection add ./tenants/${tenantId}/knowledge --name tenant-${tenantId}-knowledge`, `collection: tenant-${tenantId}-knowledge`);
+    try {
+      execSync("qmd update", { cwd: CWD, stdio: "pipe" });
+    } catch { /* ignore */ }
+  }
+
+  console.log(`
+  tenant "${tenantId}" ready!
+
+  Usage: set CWD to tenants/${tenantId}/ when running hipocampus for this tenant.
+  Example: hipocampus compact  (from tenants/${tenantId}/ directory)
+`);
 }
 
 // ─── Done ───
